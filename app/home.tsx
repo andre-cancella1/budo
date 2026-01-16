@@ -295,7 +295,7 @@ export default function DashboardAlunos() {
                   if (isMobile) setMenuOpen(false); // Fecha o menu lateral no mobile
                 }}
               />
-              {!dojoId && (
+              {dojoId && (
                 <MenuItem icon="pencil" title="Cadastrar Dojo" />
               )}
               <MenuItem icon="settings" title="Cadastro de faixas" />
