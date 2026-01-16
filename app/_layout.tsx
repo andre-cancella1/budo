@@ -17,19 +17,9 @@ export default function RootLayout() {
       <Stack>
         {/* CONFIGURAÇÃO ESPECÍFICA DA HOME: Remove o header apenas aqui */}
         <Stack.Screen 
-        name="index" 
-        options={{ 
-          title: 'Acessar Conta', // Título que aparece no navegador
-          headerShown: false      // Se quiser esconder a barra de cima no Login
-        }} 
-      />
-      <Stack.Screen 
-        name="home" 
-        options={{ 
-          title: 'Minha Home', 
-          headerShown: true 
-        }} 
-      />
+          name="index" 
+          options={{ headerShown: false }} 
+        />
 
         {/* O RESTO CONTINUA COM O PADRÃO: (tabs) e modal */}
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
