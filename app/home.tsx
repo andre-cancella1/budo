@@ -1,23 +1,58 @@
+import { Ionicons } from '@expo/vector-icons';
+import { Picker } from '@react-native-picker/picker';
+import { Stack, useRouter } from 'expo-router';
 import Head from 'expo-router/head'; // Importação importante
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
-  StyleSheet
+  Dimensions,
+  FlatList,
+  Image,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
-import { Belts } from '../type/database';
+import { Belts, Students } from '../type/database';
 
 export default function DashboardAlunos() {
-  return (
-    <>
-      <Head>
-        <title>Budo</title>
-        <meta name="description" content="Página inicial" />
-      </Head>
-      
-      {/* Resto do seu código de Login */}
-    </>
-  );
+  const router = useRouter();
+  const [alunos, setAlunos] = useState<Students[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [belts, setBelts] = useState<Belts[]>([]);
+  const [dojoId, setDojoId] = useState<string | null>(null);
+
+  // Controle de Responsividade
+  const [screenWidth, setScreenWidth] = useState(Dimensions.get('window').width);
+  const isMobile = screenWidth < 768;
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Estado para o Dropdown/Modal Mobile
+  const [selectedStudent, setSelectedStudent] = useState<Students | null>(null);
+
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setScreenWidth(window.width);
+    });
+    return () => subscription?.remove();
+  }, []);
+
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newStudent, setNewStudent] = useState({
+    name: '',
+    belt: '',
+    birth_date: '',
+    city: '',
+    address: '',
+    state: '',
+    cpf: '',
+    email: ''
+  });
 
   async function fetchDojo() {
     try {
@@ -69,6 +104,10 @@ export default function DashboardAlunos() {
     }
   }
 
+  useEffect(() => {
+    fetchData();
+    fetchBelts(); // Carrega as faixas ao iniciar
+  }, []);
 
   async function handleCreateStudent() {
     // Validação básica de campos obrigatórios
@@ -158,11 +197,283 @@ export default function DashboardAlunos() {
     }
   }
 
+  // Substitua seus useEffects por estes dois:
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  // Este novo useEffect garante que as faixas carreguem assim que o dojoId for definido
+  useEffect(() => {
+    if (dojoId) {
+      fetchBelts();
+    }
+  }, [dojoId]);
   async function handleLogout() {
     await supabase.auth.signOut();
     router.replace('/login');
   }
 
+  // Itens do Menu Lateral
+  // Dentro do DashboardAlunos
+  const MenuItem = ({ icon, title, active = false, onPress }: any) => (
+    <TouchableOpacity
+      style={[styles.menuItem, active && styles.menuItemActive]}
+      onPress={onPress} // <-- Esta linha é essencial!
+    >
+      <Ionicons name={icon} size={20} color="#fff" />
+      <Text style={styles.menuText}>{title}</Text>
+    </TouchableOpacity>
+  );
+
+  // --- COMPONENTES DE RENDERIZAÇÃO ---
+
+  // Versão Mobile: Card com Dropdown
+  const MobileCard = ({ item }: { item: Students }) => (
+    <View style={styles.mobileCard}>
+      <View>
+        <Text style={styles.mobileName}>{item.name}</Text>
+
+        <Text style={styles.mobileSub}>{item.belt}</Text>
+      </View>
+      <TouchableOpacity onPress={() => setSelectedStudent(item)}>
+        <Ionicons name="ellipsis-vertical" size={24} color="#666" />
+      </TouchableOpacity>
+    </View>
+  );
+
+  // Versão Web: Linha da Tabela (Fonte maior e centralizada)
+  const TableRow = ({ item }: { item: Students }) => (
+    <View style={styles.tableRow}>
+      <Text style={[styles.cell, { width: 350 }]}>{item.name}</Text>
+      <Text style={styles.mobileName}>{item.birth_date}</Text>
+      <Text style={[styles.cell, { width: 150, fontWeight: 'bold', textAlign: 'center' }]}>{item.belt}</Text>
+      <View style={styles.actionContainerWeb}>
+        <TouchableOpacity style={styles.btnEditWeb}><Text style={styles.btnTextWeb}>Editar</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.btnDelWeb}><Text style={styles.btnTextWeb}>Excluir</Text></TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  return (
+    <>
+      <Head>
+        <title>Dashboard | Budo</title>
+        <meta name="description" content="Página de Login" />
+      </Head>
+
+    <View style={styles.container}>
+      <Stack.Screen options={{ headerShown: false }} />
+
+      {/* 1. SIDEBAR */}
+      {(!isMobile || menuOpen) && (
+        <View style={[styles.sidebar, isMobile ? styles.sidebarMobile : styles.sidebarWeb]}>
+          <View style={styles.logoContainer}>
+            <Image source={require('../assets/images/kimono.png')} style={styles.logoSidebar} />
+          </View>
+          <ScrollView>
+            <MenuItem icon="people" title="Lista de Alunos" active={true} />
+            <MenuItem
+              icon="person-add"
+              title="Cadastrar Alunos"
+              onPress={() => {
+                setIsCreateModalOpen(true);
+                if (isMobile) setMenuOpen(false); // Fecha o menu lateral no mobile
+              }}
+            />
+            <MenuItem icon="pencil" title="Cadastrar Dojo" />
+            <MenuItem icon="settings" title="Cadastro de faixas" />
+            <MenuItem icon="calendar" title="Calendário de eventos" />
+            <MenuItem icon="cash" title="Mensalidade" />
+          </ScrollView>
+          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+            <Ionicons name="arrow-back" size={20} color="#fff" />
+            <Text style={styles.menuText}>Sair</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {isMobile && menuOpen && (
+        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setMenuOpen(false)} />
+      )}
+
+      {/* 2. CONTEÚDO PRINCIPAL */}
+      <View style={styles.mainContent}>
+        {isMobile && (
+          <View style={styles.mobileHeader}>
+            <TouchableOpacity onPress={() => setMenuOpen(true)}>
+              <Ionicons name="menu" size={32} color="#222" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitleMobile}>Lista de Alunos</Text>
+          </View>
+        )}
+
+        {!isMobile && <Text style={styles.headerTitleWeb}>Lista de Alunos</Text>}
+
+        {loading ? (
+          <ActivityIndicator size="large" color="#b31d1d" style={{ flex: 1 }} />
+        ) : (
+          isMobile ? (
+            <FlatList
+              data={alunos}
+              keyExtractor={item => item.id}
+              renderItem={({ item }) => <MobileCard item={item} />}
+              contentContainerStyle={{ paddingBottom: 20 }}
+              ListEmptyComponent={<Text style={styles.emptyText}>Nenhum aluno encontrado.</Text>}
+            />
+          ) : (
+            <View style={styles.webTableWrapper}>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.columnHeader, { width: 350 }]}>NOME DO ALUNO</Text>
+                <Text style={[styles.columnHeader, { width: 350 }]}>DATA DE NASCIMENTO</Text>
+                <Text style={[styles.columnHeader, { width: 150, textAlign: 'center' }]}>FAIXA</Text>
+                <Text style={[styles.columnHeader, { width: 200, textAlign: 'center' }]}>AÇÕES</Text>
+              </View>
+              <FlatList
+                data={alunos}
+                keyExtractor={item => item.id}
+                renderItem={({ item }) => <TableRow item={item} />}
+                ListEmptyComponent={<Text style={styles.emptyText}>Nenhum aluno cadastrado.</Text>}
+              />
+            </View>
+          )
+        )}
+      </View>
+
+      {/* 3. DROPDOWN MODAL (MOBILE) */}
+      <Modal visible={!!selectedStudent} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setSelectedStudent(null)}
+        >
+          <View style={styles.dropdownContainer}>
+            <Text style={styles.dropdownTitle}>{selectedStudent?.name}</Text>
+            <TouchableOpacity style={styles.dropdownItem} onPress={() => setSelectedStudent(null)}>
+              <Ionicons name="pencil" size={20} color="#5bc0de" />
+              <Text style={styles.dropdownText}>Editar Aluno</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.dropdownItem, { borderBottomWidth: 0 }]} onPress={() => setSelectedStudent(null)}>
+              <Ionicons name="trash" size={20} color="#d9534f" />
+              <Text style={styles.dropdownText}>Excluir Aluno</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* MODAL PARA CRIAR ALUNO - CORRIGIDO */}
+      <Modal visible={isCreateModalOpen} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.dropdownContainer, { width: isMobile ? '90%' : 500, padding: 20 }]}>
+            <Text style={[styles.dropdownTitle, { fontSize: 22, borderBottomWidth: 0 }]}>Cadastrar Novo Aluno</Text>
+
+            {/* Adicionado ScrollView para não cortar em telas menores */}
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.label}>Nome do Aluno</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Digite o nome completo"
+                value={newStudent.name}
+                onChangeText={(text) => setNewStudent({ ...newStudent, name: text })}
+              />
+
+              <Text style={styles.label}>Email</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Digite o email"
+                value={newStudent.email} // Corrigido de .name para .email
+                onChangeText={(text) => setNewStudent({ ...newStudent, email: text })}
+              />
+
+              <Text style={styles.label}>CPF</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="000.000.000-00"
+                value={newStudent.cpf}
+                onChangeText={(text) => setNewStudent({ ...newStudent, cpf: text })}
+                keyboardType="numeric"
+                maxLength={14}
+              />
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Nascimento</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="DD/MM/AAAA"
+                    value={newStudent.birth_date}
+                    onChangeText={(text) => setNewStudent({ ...newStudent, birth_date: text })}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Cidade</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ex: Unaí"
+                    value={newStudent.city}
+                    onChangeText={(text) => setNewStudent({ ...newStudent, city: text })}
+                  />
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Estado</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ex: MG"
+                    value={newStudent.state}
+                    onChangeText={(text) => setNewStudent({ ...newStudent, state: text })}
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.label}>Endereço</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ex: Rua ..., 123"
+                value={newStudent.address} // Corrigido de .city para .address
+                onChangeText={(text) => setNewStudent({ ...newStudent, address: text })}
+              />
+
+              <Text style={styles.label}>Faixa</Text>
+              <View style={[styles.input, { padding: 0, justifyContent: 'center' }]}>
+                <Picker
+                  selectedValue={newStudent.belt}
+                  onValueChange={(itemValue) =>
+                    setNewStudent({ ...newStudent, belt: itemValue })
+                  }
+                  style={{ height: 50, width: '100%' }}
+                >
+                  <Picker.Item label="Selecione uma faixa..." value="" color="#999" />
+                  {belts.map((b) => (
+                    <Picker.Item key={b.id} label={b.color} value={b.color} />
+                  ))}
+                </Picker>
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.btnAction, { backgroundColor: '#ccc' }]}
+                  onPress={() => setIsCreateModalOpen(false)}
+                >
+                  <Text style={styles.btnTextForm}>Cancelar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.btnAction, { backgroundColor: '#b31d1d' }]}
+                  onPress={handleCreateStudent}
+                >
+                  <Text style={styles.btnTextForm}>Salvar Aluno</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  </>
+  );
 }
 
 const styles = StyleSheet.create({

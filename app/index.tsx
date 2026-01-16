@@ -1,19 +1,19 @@
+import { Ionicons } from '@expo/vector-icons';
+import { router, Stack } from 'expo-router'; // Importante para sumir com a barra
+import Head from 'expo-router/head'; // Importação importante
 import React, { useState } from 'react';
 import {
-    View,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    StyleSheet,
     Alert,
     Image,
     SafeAreaView,
-    StatusBar
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
-import { Stack } from 'expo-router'; // Importante para sumir com a barra
 import { supabase } from '../lib/supabase';
-import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 
 export default function Login() {
     const [email, setEmail] = useState('');
@@ -45,77 +45,83 @@ export default function Login() {
 
 
     return (
-        <SafeAreaView style={styles.background}>
-            {/* 1. Remove a barra preta "index" */}
-            <Stack.Screen options={{ headerShown: false }} />
+        <>
+            <Head>
+                <title>Login | Budo</title>
+                <meta name="description" content="Página de Login" />
+            </Head>
+            <SafeAreaView style={styles.background}>
+                {/* 1. Remove a barra preta "index" */}
+                <Stack.Screen options={{ headerShown: false }} />
 
-            {/* 2. Deixa os ícones da bateria/hora brancos para combinar com o fundo */}
-            <StatusBar barStyle="light-content" />
+                {/* 2. Deixa os ícones da bateria/hora brancos para combinar com o fundo */}
+                <StatusBar barStyle="light-content" />
 
-            <View style={styles.card}>
-                {/* Header com o Kimono */}
-                <View style={styles.logoContainer}>
-                    <View style={styles.logoCircle}>
-                        <Image
-                            source={require('../assets/images/kimono.png')} // Certifique-se que o caminho está correto
-                            style={styles.kimonoImage}
-                            resizeMode="contain"
-                        />
-                    </View>
-                </View>
-
-                {/* Formulário */}
-                <View style={styles.form}>
-                    <View style={styles.inputGroup}>
-                        <View style={styles.iconContainer}>
-                            <Ionicons name="person" size={20} color="#fff" />
+                <View style={styles.card}>
+                    {/* Header com o Kimono */}
+                    <View style={styles.logoContainer}>
+                        <View style={styles.logoCircle}>
+                            <Image
+                                source={require('../assets/images/kimono.png')} // Certifique-se que o caminho está correto
+                                style={styles.kimonoImage}
+                                resizeMode="contain"
+                            />
                         </View>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="teste"
-                            value={email}
-                            onChangeText={setEmail}
-                            autoCapitalize="none"
-                            placeholderTextColor="#999"
-                        />
                     </View>
 
-                    <View style={styles.inputGroup}>
-                        <View style={styles.iconContainer}>
-                            <Ionicons name="key" size={20} color="#fff" />
+                    {/* Formulário */}
+                    <View style={styles.form}>
+                        <View style={styles.inputGroup}>
+                            <View style={styles.iconContainer}>
+                                <Ionicons name="person" size={20} color="#fff" />
+                            </View>
+                            <TextInput
+                                style={styles.input}
+                                placeholder="teste"
+                                value={email}
+                                onChangeText={setEmail}
+                                autoCapitalize="none"
+                                placeholderTextColor="#999"
+                            />
                         </View>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="••••••"
-                            secureTextEntry
-                            value={password}
-                            onChangeText={setPassword}
-                            placeholderTextColor="#999"
-                        />
+
+                        <View style={styles.inputGroup}>
+                            <View style={styles.iconContainer}>
+                                <Ionicons name="key" size={20} color="#fff" />
+                            </View>
+                            <TextInput
+                                style={styles.input}
+                                placeholder="••••••"
+                                secureTextEntry
+                                value={password}
+                                onChangeText={setPassword}
+                                placeholderTextColor="#999"
+                            />
+                        </View>
+
+                        <TouchableOpacity
+                            style={styles.loginButton}
+                            onPress={handleLogin}
+                            disabled={loading}
+                        >
+                            <Text style={styles.buttonText}>
+                                {loading ? 'Entrando...' : 'Login'}
+                            </Text>
+                        </TouchableOpacity>
                     </View>
 
-                    <TouchableOpacity
-                        style={styles.loginButton}
-                        onPress={handleLogin}
-                        disabled={loading}
-                    >
-                        <Text style={styles.buttonText}>
-                            {loading ? 'Entrando...' : 'Login'}
+                    {/* Links de Rodapé */}
+                    <View style={styles.footer}>
+                        <Text style={styles.footerText}>
+                            Não possui uma conta? <Text style={styles.linkText}>Cadastre</Text>
                         </Text>
-                    </TouchableOpacity>
+                        <TouchableOpacity>
+                            <Text style={styles.forgotText}>Esqueceu sua senha?</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
-
-                {/* Links de Rodapé */}
-                <View style={styles.footer}>
-                    <Text style={styles.footerText}>
-                        Não possui uma conta? <Text style={styles.linkText}>Cadastre</Text>
-                    </Text>
-                    <TouchableOpacity>
-                        <Text style={styles.forgotText}>Esqueceu sua senha?</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
-        </SafeAreaView>
+            </SafeAreaView>
+        </>
     );
 }
 
