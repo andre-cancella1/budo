@@ -297,8 +297,8 @@ export default function DashboardAlunos() {
               />
               <MenuItem icon="pencil" title="Cadastrar Dojo" />
               <MenuItem icon="settings" title="Cadastro de faixas" />
-              <MenuItem icon="calendar" title="Calendário de eventos" />
-              <MenuItem icon="cash" title="Mensalidade" />
+              {/*<MenuItem icon="calendar" title="Calendário de eventos" />
+              <MenuItem icon="cash" title="Mensalidade" />*/}
             </ScrollView>
             <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
               <Ionicons name="arrow-back" size={20} color="#fff" />
