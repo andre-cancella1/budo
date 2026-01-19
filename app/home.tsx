@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
-import { Stack, useRouter } from 'expo-router';
+import { Stack } from 'expo-router';
 import Head from 'expo-router/head';
 import React, { useEffect, useState } from 'react';
 import {
@@ -8,7 +8,6 @@ import {
   Alert,
   Dimensions,
   FlatList,
-  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -20,10 +19,9 @@ import {
 import { supabase } from '../lib/supabase';
 import { Belts, Students } from '../type/database';
 
-const ITEMS_PER_PAGE = 6;
+const ITEMS_PER_PAGE = 10;
 
 export default function DashboardAlunos() {
-  const router = useRouter();
   const [alunos, setAlunos] = useState<Students[]>([]);
   const [loading, setLoading] = useState(true);
   const [belts, setBelts] = useState<Belts[]>([]);
@@ -31,18 +29,29 @@ export default function DashboardAlunos() {
 
   const [screenWidth, setScreenWidth] = useState(Dimensions.get('window').width);
   const isMobile = screenWidth < 768;
-  const [menuOpen, setMenuOpen] = useState(false);
 
   const [selectedBelt, setSelectedBelt] = useState('TODAS');
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Modais
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isBeltModalOpen, setIsBeltModalOpen] = useState(false);
+
   const [newBeltColor, setNewBeltColor] = useState('');
 
+  // FORMULÁRIO COMPLETO RESTAURADO
   const [newStudent, setNewStudent] = useState({
-    name: '', belt: '', birth_date: '', city: '', address: '', state: '', cpf: '', email: '',
-    guardian_name: '', phone: ''
+    name: '',
+    belt: '',
+    birth_date: '',
+    city: '',
+    address: '',
+    state: '',
+    cpf: '',
+    email: '',
+    guardian_name: '',
+    phone: '',
+    tuition_value: '150' // Campo para o financeiro
   });
 
   const formatDate = (text: string) => {
@@ -61,20 +70,14 @@ export default function DashboardAlunos() {
     try {
       setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user) return; // O _layout cuidará do redirecionamento
-
+      if (!user) return;
       const { data: dojo } = await supabase.from('dojo_users').select('dojo_id').eq('user_id', user.id).maybeSingle();
       if (dojo) {
         setDojoId(dojo.dojo_id);
         const { data } = await supabase.from('students').select('*').eq('dojo_id', dojo.dojo_id).order('name');
         setAlunos(data || []);
       }
-    } catch (e: any) {
-      Alert.alert('Erro', e.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e: any) { Alert.alert('Erro', e.message); } finally { setLoading(false); }
   }
 
   async function fetchBelts() {
@@ -82,252 +85,267 @@ export default function DashboardAlunos() {
     setBelts(data || []);
   }
 
-  const handleLogout = async () => {
-    console.log("Executando logout...");
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-
-      // Se o layout não redirecionar sozinho, forçamos aqui:
-      router.replace('/');
-    } catch (e: any) {
-      console.log("Erro no logout:", e.message);
-      // Caso o Alert falhe, usamos o alert nativo que funciona em tudo
-      alert("Erro ao sair: " + e.message);
-    }
-  };
-
-  async function handleCreateBelt() {
-    if (!newBeltColor) return Alert.alert("Atenção", "Digite o nome da cor da faixa.");
-    try {
-      const { error } = await supabase.from('belts').insert([{ color: newBeltColor.trim(), dojo_id: dojoId }]);
-      if (error) throw error;
-      Alert.alert("Sucesso", "Faixa cadastrada!");
-      setNewBeltColor('');
-      setIsBeltModalOpen(false);
-      await fetchBelts();
-    } catch (e: any) { Alert.alert("Erro ao salvar faixa", e.message); }
-  }
-
   async function handleCreateStudent() {
-    if (!newStudent.name || !newStudent.belt || !newStudent.cpf) return Alert.alert("Atenção", "Preencha Nome, Faixa e CPF.");
-    try {
-      const { error } = await supabase.from('students').insert([{ ...newStudent, dojo_id: dojoId }]);
-      if (error) throw error;
-      Alert.alert("Sucesso", "Aluno cadastrado!");
-      setIsCreateModalOpen(false);
-      setNewStudent({ name: '', belt: '', birth_date: '', city: '', address: '', state: '', cpf: '', email: '', guardian_name: '', phone: '' });
-      fetchData();
-    } catch (e: any) { Alert.alert("Erro", e.message); }
-  }
+    if (!newStudent.name || !newStudent.belt || !newStudent.cpf) {
+      return Alert.alert("Atenção", "Preencha Nome, Faixa e CPF.");
+    }
 
-  const MenuItem = ({ icon, title, active = false, onPress }: any) => (
-    <TouchableOpacity style={[styles.menuItem, active && styles.menuItemActive]} onPress={onPress}>
-      <Ionicons name={icon} size={20} color="#fff" />
-      <Text style={styles.menuText}>{title}</Text>
-    </TouchableOpacity>
-  );
+    try {
+      setLoading(true);
+
+      // SEPARA o tuition_value do resto dos dados do aluno
+      const { tuition_value, ...studentDataToSave } = newStudent;
+
+      // 1. Inserir Aluno apenas com os campos da tabela 'students'
+      const { data: studentData, error: studentError } = await supabase
+        .from('students')
+        .insert([{ ...studentDataToSave, dojo_id: dojoId }])
+        .select().single();
+
+      if (studentError) throw studentError;
+
+      // 2. Gerar Mensalidades usando o tuition_value extraído
+      const mensalidades = [];
+      const hoje = new Date();
+      const valorMensalidade = parseFloat(tuition_value) || 0;
+
+      for (let i = hoje.getMonth(); i <= 11; i++) {
+        mensalidades.push({
+          student_id: studentData.id,
+          dojo_id: dojoId,
+          description: `Mensalidade ${i + 1}/${hoje.getFullYear()}`,
+          amount: valorMensalidade,
+          due_date: new Date(hoje.getFullYear(), i, hoje.getDate()).toISOString().split('T')[0],
+          status: 'PENDENTE'
+        });
+      }
+
+      const { error: paymentError } = await supabase.from('payments').insert(mensalidades);
+      if (paymentError) console.error("Erro ao gerar mensalidades:", paymentError);
+
+      Alert.alert("Sucesso", "Aluno cadastrado e mensalidades geradas!");
+      setIsCreateModalOpen(false);
+
+      // Limpa o formulário
+      setNewStudent({
+        name: '', belt: '', birth_date: '', city: '', address: '', state: '',
+        cpf: '', email: '', guardian_name: '', phone: '', tuition_value: '150'
+      });
+
+      fetchData();
+    } catch (e: any) {
+      Alert.alert("Erro", e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const filteredAlunos = selectedBelt === 'TODAS' ? alunos : alunos.filter(a => a.belt === selectedBelt);
   const paginatedAlunos = filteredAlunos.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   return (
-    <>
-      <Head><title>Dashboard | Budo</title></Head>
-      <View style={styles.container}>
-        <Stack.Screen options={{ headerShown: false }} />
+    <View style={styles.container}>
+      <Head><title>Alunos | Budo</title></Head>
+      <Stack.Screen options={{ title: 'Alunos' }} />
 
-        {/* SIDEBAR */}
-        {(!isMobile || menuOpen) && (
-          <View style={[styles.sidebar, isMobile ? styles.sidebarMobile : styles.sidebarWeb]}>
-            <View style={styles.logoContainer}><Image source={require('../assets/images/kimono.png')} style={styles.logoSidebar} /></View>
-            <ScrollView>
-              <MenuItem icon="people" title="Lista de Alunos" active={true} />
-              <MenuItem icon="person-add" title="Cadastrar Alunos" onPress={() => { setIsCreateModalOpen(true); if (isMobile) setMenuOpen(false); }} />
-              <MenuItem icon="settings" title="Cadastro de faixas" onPress={() => { setIsBeltModalOpen(true); if (isMobile) setMenuOpen(false); }} />
-            </ScrollView>
-            <TouchableOpacity
-              style={styles.logoutBtn}
-              onPress={handleLogout}
-            >
-              <Ionicons name="log-out-outline" size={20} color="#fff" />
-              <Text style={styles.menuText}>Sair</Text>
+      <View style={styles.mainContent}>
+        <View style={styles.headerRow}>
+          <Text style={isMobile ? styles.headerTitleMobile : styles.headerTitleWeb}>Alunos</Text>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity style={styles.btnSecondary} onPress={() => setIsBeltModalOpen(true)}>
+              <Ionicons name="settings-outline" size={20} color="#1B2559" />
+              {!isMobile && <Text style={styles.btnSecondaryText}>Faixas</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.btnNew} onPress={() => setIsCreateModalOpen(true)}>
+              <Ionicons name="add" size={20} color="#fff" />
+              <Text style={styles.btnNewText}>{isMobile ? 'Novo' : 'Novo Aluno'}</Text>
             </TouchableOpacity>
           </View>
-        )}
+        </View>
 
-        {isMobile && menuOpen && <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setMenuOpen(false)} />}
+        {/* FILTROS */}
+        <View style={styles.filterContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+            {['TODAS', ...belts.map(b => b.color)].map(belt => (
+              <TouchableOpacity key={belt} onPress={() => { setSelectedBelt(belt); setCurrentPage(1); }}
+                style={[styles.chip, selectedBelt === belt && styles.chipActive]}>
+                <Text style={[styles.chipText, selectedBelt === belt && styles.chipTextActive]}>{belt}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
 
-        <View style={styles.mainContent}>
-          {isMobile ? (
-            <View style={styles.mobileHeader}>
-              <TouchableOpacity onPress={() => setMenuOpen(true)}><Ionicons name="menu" size={32} color="#222" /></TouchableOpacity>
-              <Text style={styles.headerTitleMobile}>Alunos</Text>
-            </View>
-          ) : <Text style={styles.headerTitleWeb}>Gerenciamento de Alunos</Text>}
-
-          <View style={styles.filterContainer}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
-              {['TODAS', ...belts.map(b => b.color)].map(belt => (
-                <TouchableOpacity key={belt} onPress={() => { setSelectedBelt(belt); setCurrentPage(1); }} style={[styles.chip, selectedBelt === belt && styles.chipActive]}>
-                  <Text style={[styles.chipText, selectedBelt === belt && styles.chipTextActive]}>{belt}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
-          {loading ? <ActivityIndicator size="large" color="#b31d1d" style={{ flex: 1 }} /> : (
-            <>
-              {isMobile ? (
+        {loading ? <ActivityIndicator size="large" color="#b31d1d" style={{ flex: 1 }} /> : (
+          <>
+            {isMobile ? (
+              <FlatList data={paginatedAlunos} keyExtractor={item => item.id} renderItem={({ item }) => (
+                <View style={styles.mobileCard}>
+                  <View style={styles.avatar}><Text style={styles.avatarText}>{item.name.charAt(0)}</Text></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.mobileName}>{item.name}</Text>
+                    <Text style={styles.mobileSub}>{item.belt} • {item.birth_date}</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity style={styles.btnIcon}><Ionicons name="pencil" size={18} color="#5bc0de" /></TouchableOpacity>
+                    <TouchableOpacity style={styles.btnIcon}><Ionicons name="trash" size={18} color="#d9534f" /></TouchableOpacity>
+                  </View>
+                </View>
+              )} />
+            ) : (
+              <View style={styles.webCard}>
+                <View style={styles.tableHeader}>
+                  <Text style={[styles.col, { flex: 2 }]}>Nome</Text>
+                  <Text style={[styles.col, { flex: 1 }]}>Nascimento</Text>
+                  <Text style={[styles.col, { flex: 1, textAlign: 'center' }]}>Faixa</Text>
+                  <Text style={[styles.col, { flex: 1, textAlign: 'center' }]}>Ações</Text>
+                </View>
                 <FlatList data={paginatedAlunos} keyExtractor={item => item.id} renderItem={({ item }) => (
-                  <View style={styles.mobileCard}>
-                    <View style={styles.avatar}><Text style={styles.avatarText}>{item.name.charAt(0)}</Text></View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.mobileName}>{item.name}</Text>
-                      <Text style={styles.mobileSub}>{item.belt} • {item.birth_date}</Text>
-                    </View>
-                    <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <View style={styles.tableRow}>
+                    <Text style={[styles.cell, { flex: 2 }]}>{item.name}</Text>
+                    <Text style={[styles.cell, { flex: 1 }]}>{item.birth_date}</Text>
+                    <Text style={[styles.cell, { flex: 1, textAlign: 'center', fontWeight: 'bold' }]}>{item.belt}</Text>
+                    <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'center', gap: 10 }}>
                       <TouchableOpacity style={styles.btnIcon}><Ionicons name="pencil" size={18} color="#5bc0de" /></TouchableOpacity>
                       <TouchableOpacity style={styles.btnIcon}><Ionicons name="trash" size={18} color="#d9534f" /></TouchableOpacity>
                     </View>
                   </View>
                 )} />
-              ) : (
-                <View style={styles.webCard}>
-                  <View style={styles.tableHeader}>
-                    <Text style={[styles.col, { flex: 2 }]}>Nome do Aluno</Text>
-                    <Text style={[styles.col, { flex: 1 }]}>Nascimento</Text>
-                    <Text style={[styles.col, { flex: 1, textAlign: 'center' }]}>Faixa</Text>
-                    <Text style={[styles.col, { flex: 1, textAlign: 'center' }]}>Ações</Text>
-                  </View>
-                  <FlatList data={paginatedAlunos} keyExtractor={item => item.id} renderItem={({ item }) => (
-                    <View style={styles.tableRow}>
-                      <Text style={[styles.cell, { flex: 2 }]}>{item.name}</Text>
-                      <Text style={[styles.cell, { flex: 1 }]}>{item.birth_date}</Text>
-                      <Text style={[styles.cell, { flex: 1, textAlign: 'center', fontWeight: 'bold' }]}>{item.belt}</Text>
-                      <View style={[styles.cell, { flex: 1, flexDirection: 'row', justifyContent: 'center', gap: 10 }]}>
-                        <TouchableOpacity style={styles.btnIcon}><Ionicons name="pencil" size={18} color="#5bc0de" /></TouchableOpacity>
-                        <TouchableOpacity style={styles.btnIcon}><Ionicons name="trash" size={18} color="#d9534f" /></TouchableOpacity>
-                      </View>
-                    </View>
-                  )} />
-                </View>
-              )}
-            </>
-          )}
-        </View>
-
-        {/* MODAL CADASTRAR ALUNO */}
-        <Modal visible={isCreateModalOpen} transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Cadastrar Novo Aluno</Text>
-              <ScrollView showsVerticalScrollIndicator={false}>
-                <Text style={styles.label}>Nome do Aluno</Text>
-                <TextInput style={styles.input} value={newStudent.name} onChangeText={(text) => setNewStudent({ ...newStudent, name: text })} />
-                <Text style={styles.label}>Nome do Responsável</Text>
-                <TextInput style={styles.input} value={newStudent.guardian_name} onChangeText={(text) => setNewStudent({ ...newStudent, guardian_name: text })} />
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.label}>Telefone</Text>
-                    <TextInput style={styles.input} value={newStudent.phone} onChangeText={(text) => setNewStudent({ ...newStudent, phone: text })} keyboardType="phone-pad" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.label}>CPF</Text>
-                    <TextInput style={styles.input} value={newStudent.cpf} onChangeText={(text) => setNewStudent({ ...newStudent, cpf: text })} keyboardType="numeric" />
-                  </View>
-                </View>
-                <Text style={styles.label}>Email</Text>
-                <TextInput style={styles.input} value={newStudent.email} onChangeText={(text) => setNewStudent({ ...newStudent, email: text })} />
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.label}>Nascimento</Text>
-                    <TextInput style={styles.input} placeholder="DD/MM/AAAA" value={newStudent.birth_date} onChangeText={(t) => setNewStudent({ ...newStudent, birth_date: formatDate(t) })} keyboardType="numeric" maxLength={10} />
-                  </View>
-                  <View style={{ flex: 1 }}><Text style={styles.label}>Cidade</Text><TextInput style={styles.input} value={newStudent.city} onChangeText={(text) => setNewStudent({ ...newStudent, city: text })} /></View>
-                </View>
-                <Text style={styles.label}>Faixa</Text>
-                <View style={styles.pickerWrap}>
-                  <Picker selectedValue={newStudent.belt} onValueChange={(v) => setNewStudent({ ...newStudent, belt: v })}>
-                    <Picker.Item label="Selecione..." value="" />
-                    {belts.map(b => <Picker.Item key={b.color} label={b.color} value={b.color} />)}
-                  </Picker>
-                </View>
-                <View style={styles.modalActions}>
-                  <TouchableOpacity style={styles.btnCancel} onPress={() => setIsCreateModalOpen(false)}><Text>Cancelar</Text></TouchableOpacity>
-                  <TouchableOpacity style={styles.btnSave} onPress={handleCreateStudent}><Text style={{ color: '#fff', fontWeight: 'bold' }}>Salvar Aluno</Text></TouchableOpacity>
-                </View>
-              </ScrollView>
-            </View>
-          </View>
-        </Modal>
-
-        {/* MODAL CADASTRAR FAIXA */}
-        <Modal visible={isBeltModalOpen} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { maxWidth: 400 }]}>
-              <Text style={styles.modalTitle}>Nova Faixa</Text>
-              <Text style={styles.label}>Cor da Faixa</Text>
-              <TextInput style={styles.input} placeholder="Ex: Branca, Azul..." value={newBeltColor} onChangeText={setNewBeltColor} autoCapitalize="words" />
-              <View style={styles.modalActions}>
-                <TouchableOpacity style={styles.btnCancel} onPress={() => setIsBeltModalOpen(false)}><Text>Cancelar</Text></TouchableOpacity>
-                <TouchableOpacity style={styles.btnSave} onPress={handleCreateBelt}><Text style={{ color: '#fff', fontWeight: 'bold' }}>Cadastrar</Text></TouchableOpacity>
               </View>
-            </View>
-          </View>
-        </Modal>
+            )}
+          </>
+        )}
       </View>
-    </>
+
+      {/* MODAL ALUNO COMPLETO */}
+      <Modal visible={isCreateModalOpen} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Cadastro de Aluno</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.label}>Nome Completo</Text>
+              <TextInput style={styles.input} value={newStudent.name} onChangeText={(t) => setNewStudent({ ...newStudent, name: t })} />
+
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}><Text style={styles.label}>CPF</Text>
+                  <TextInput style={styles.input} value={newStudent.cpf} onChangeText={(t) => setNewStudent({ ...newStudent, cpf: t })} keyboardType="numeric" />
+                </View>
+                <View style={{ flex: 1 }}><Text style={styles.label}>Nascimento</Text>
+                  <TextInput style={styles.input} value={newStudent.birth_date} onChangeText={(t) => setNewStudent({ ...newStudent, birth_date: formatDate(t) })} maxLength={10} />
+                </View>
+              </View>
+
+              <Text style={styles.label}>E-mail</Text>
+              <TextInput style={styles.input} value={newStudent.email} onChangeText={(t) => setNewStudent({ ...newStudent, email: t })} keyboardType="email-address" />
+
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}><Text style={styles.label}>Telefone</Text>
+                  <TextInput style={styles.input} value={newStudent.phone} onChangeText={(t) => setNewStudent({ ...newStudent, phone: t })} keyboardType="phone-pad" />
+                </View>
+                <View style={{ flex: 1 }}><Text style={styles.label}>Valor Mensalidade</Text>
+                  <TextInput style={styles.input} value={newStudent.tuition_value} onChangeText={(t) => setNewStudent({ ...newStudent, tuition_value: t })} keyboardType="numeric" />
+                </View>
+              </View>
+
+              <Text style={styles.label}>Responsável (Obrigatório para menores)</Text>
+              <TextInput style={styles.input} value={newStudent.guardian_name} onChangeText={(t) => setNewStudent({ ...newStudent, guardian_name: t })} />
+
+              <Text style={styles.label}>Endereço</Text>
+              <TextInput style={styles.input} value={newStudent.address} onChangeText={(t) => setNewStudent({ ...newStudent, address: t })} />
+
+              <View style={styles.row}>
+                <View style={{ flex: 2 }}><Text style={styles.label}>Cidade</Text>
+                  <TextInput style={styles.input} value={newStudent.city} onChangeText={(t) => setNewStudent({ ...newStudent, city: t })} />
+                </View>
+                <View style={{ flex: 1 }}><Text style={styles.label}>Estado</Text>
+                  <TextInput style={styles.input} value={newStudent.state} onChangeText={(t) => setNewStudent({ ...newStudent, state: t })} maxLength={2} autoCapitalize="characters" />
+                </View>
+              </View>
+
+              <Text style={styles.label}>Faixa Atual</Text>
+              <View style={styles.pickerWrap}>
+                <Picker selectedValue={newStudent.belt} onValueChange={(v) => setNewStudent({ ...newStudent, belt: v })}>
+                  <Picker.Item label="Selecione..." value="" />
+                  {belts.map(b => <Picker.Item key={b.color} label={b.color} value={b.color} />)}
+                </Picker>
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.btnCancel} onPress={() => setIsCreateModalOpen(false)}><Text>Sair</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.btnSave} onPress={handleCreateStudent}><Text style={{ color: '#fff', fontWeight: 'bold' }}>Salvar Aluno</Text></TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL FAIXAS (RESTAURADO) */}
+      <Modal visible={isBeltModalOpen} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Faixas</Text>
+              <TouchableOpacity onPress={() => setIsBeltModalOpen(false)}><Ionicons name="close" size={24} /></TouchableOpacity>
+            </View>
+            <View style={styles.inputRow}>
+              <TextInput style={[styles.input, { flex: 1 }]} placeholder="Nova cor" value={newBeltColor} onChangeText={setNewBeltColor} />
+              <TouchableOpacity style={styles.btnAddSmall} onPress={async () => {
+                const { error } = await supabase.from('belts').insert([{ color: newBeltColor.toUpperCase(), dojo_id: dojoId }]);
+                if (!error) { setNewBeltColor(''); fetchBelts(); }
+              }}><Ionicons name="add" size={24} color="#fff" /></TouchableOpacity>
+            </View>
+            <FlatList data={belts} keyExtractor={item => item.id} style={{ maxHeight: 200 }} renderItem={({ item }) => (
+              <View style={styles.beltListItem}>
+                <Text style={{ fontWeight: 'bold' }}>{item.color}</Text>
+                <TouchableOpacity onPress={async () => { await supabase.from('belts').delete().eq('id', item.id); fetchBelts(); }}>
+                  <Ionicons name="trash-outline" size={20} color="#d9534f" />
+                </TouchableOpacity>
+              </View>
+            )} />
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, flexDirection: 'row', backgroundColor: '#F4F7FE' },
-  sidebar: { backgroundColor: '#1B1E23', paddingVertical: 20, width: 260 },
-  sidebarMobile: { position: 'absolute', left: 0, zIndex: 100, height: '100%' },
-  sidebarWeb: {},
-  logoContainer: { alignItems: 'center', marginBottom: 30 },
-  logoSidebar: { width: 70, height: 70, borderRadius: 35, borderWidth: 2, borderColor: '#b31d1d' },
-  menuItem: { flexDirection: 'row', alignItems: 'center', padding: 15, marginHorizontal: 10, borderRadius: 10, marginBottom: 5 },
-  menuItemActive: { backgroundColor: '#b31d1d' },
-  menuText: { color: '#fff', marginLeft: 12, fontWeight: '500' },
-  logoutBtn: {
-    flexDirection: 'row',
-    padding: 20,
-    marginTop: 'auto', // Empurra para o fim da sidebar
-    borderTopWidth: 1,
-    borderTopColor: '#333',
-    alignItems: 'center',
-    width: '100%', // Garante que toda a largura seja clicável
-  },
-  mainContent: { flex: 1, padding: 25 },
-  headerTitleWeb: { fontSize: 28, fontWeight: 'bold', color: '#1B2559', marginBottom: 25 },
-  headerTitleMobile: { fontSize: 20, fontWeight: 'bold', marginLeft: 15 },
-  mobileHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, paddingTop: 30 },
-  filterContainer: { marginBottom: 25 },
-  chip: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: '#fff', elevation: 2 },
+  container: { flex: 1, backgroundColor: '#F4F7FE' },
+  mainContent: { flex: 1, padding: 20 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  headerTitleWeb: { fontSize: 26, fontWeight: 'bold', color: '#1B2559' },
+  headerTitleMobile: { fontSize: 22, fontWeight: 'bold', color: '#1B2559' },
+  btnNew: { backgroundColor: '#b31d1d', flexDirection: 'row', padding: 12, borderRadius: 12, alignItems: 'center', gap: 5 },
+  btnNewText: { color: '#fff', fontWeight: 'bold' },
+  btnSecondary: { backgroundColor: '#fff', flexDirection: 'row', padding: 12, borderRadius: 12, alignItems: 'center', gap: 5, borderWidth: 1, borderColor: '#E0E5F2' },
+  btnSecondaryText: { color: '#1B2559', fontWeight: 'bold' },
+  filterContainer: { marginBottom: 20 },
+  chip: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 10, backgroundColor: '#fff', marginRight: 8 },
   chipActive: { backgroundColor: '#b31d1d' },
   chipText: { color: '#A3AED0', fontWeight: 'bold' },
   chipTextActive: { color: '#fff' },
-  webCard: { backgroundColor: '#fff', borderRadius: 20, padding: 20, elevation: 3 },
+  webCard: { backgroundColor: '#fff', borderRadius: 20, padding: 20 },
   tableHeader: { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#F4F7FE', paddingBottom: 15, marginBottom: 10 },
   col: { color: '#A3AED0', fontWeight: '600', fontSize: 13, textTransform: 'uppercase' },
   tableRow: { flexDirection: 'row', paddingVertical: 15, borderBottomWidth: 1, borderColor: '#F4F7FE', alignItems: 'center' },
-  cell: { color: '#2B3674', fontSize: 15, fontWeight: '500' },
-  btnIcon: { padding: 8, borderRadius: 8, backgroundColor: '#F4F7FE' },
-  mobileCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 15, borderRadius: 15, marginBottom: 12 },
+  cell: { color: '#2B3674', fontSize: 15 },
+  mobileCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 15, borderRadius: 15, marginBottom: 10 },
   avatar: { width: 45, height: 45, borderRadius: 12, backgroundColor: '#F4F7FE', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  avatarText: { color: '#b31d1d', fontWeight: 'bold', fontSize: 18 },
+  avatarText: { color: '#b31d1d', fontWeight: 'bold' },
   mobileName: { fontWeight: 'bold', fontSize: 16, color: '#2B3674' },
-  mobileSub: { color: '#A3AED0', fontSize: 12, marginTop: 2 },
+  mobileSub: { color: '#A3AED0', fontSize: 12 },
+  btnIcon: { padding: 8, borderRadius: 8, backgroundColor: '#F4F7FE' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { width: '90%', maxWidth: 500, backgroundColor: '#fff', borderRadius: 24, padding: 25, maxHeight: '85%' },
-  modalTitle: { fontSize: 22, fontWeight: 'bold', color: '#1B2559', marginBottom: 20, textAlign: 'center' },
-  label: { fontSize: 14, fontWeight: '700', color: '#1B2559', marginTop: 15, marginBottom: 5 },
-  input: { backgroundColor: '#F4F7FE', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E0E5F2' },
-  pickerWrap: { backgroundColor: '#F4F7FE', borderRadius: 12, borderWidth: 1, borderColor: '#E0E5F2', marginTop: 5 },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 30 },
-  btnCancel: { padding: 15, borderRadius: 12, backgroundColor: '#F4F7FE' },
-  btnSave: { padding: 15, borderRadius: 12, backgroundColor: '#b31d1d' },
-  overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 90 },
+  modalContent: { width: '90%', maxWidth: 550, backgroundColor: '#fff', borderRadius: 25, padding: 25, maxHeight: '90%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 22, fontWeight: 'bold', color: '#1B2559' },
+  label: { fontWeight: '600', color: '#1B2559', marginTop: 15, marginBottom: 5 },
+  input: { backgroundColor: '#F4F7FE', padding: 12, borderRadius: 12, color: '#2B3674' },
+  row: { flexDirection: 'row', gap: 10 },
+  inputRow: { flexDirection: 'row', gap: 10, marginBottom: 15 },
+  btnAddSmall: { backgroundColor: '#b31d1d', padding: 12, borderRadius: 12, justifyContent: 'center' },
+  beltListItem: { flexDirection: 'row', justifyContent: 'space-between', padding: 15, borderBottomWidth: 1, borderColor: '#F4F7FE' },
+  pickerWrap: { backgroundColor: '#F4F7FE', borderRadius: 12, marginTop: 5 },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 15, marginTop: 30 },
+  btnCancel: { padding: 12 },
+  btnSave: { backgroundColor: '#b31d1d', paddingVertical: 12, paddingHorizontal: 25, borderRadius: 12 }
 });

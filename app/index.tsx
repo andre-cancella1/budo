@@ -77,7 +77,7 @@ export default function Login() {
                             </View>
                             <TextInput
                                 style={styles.input}
-                                placeholder="teste"
+                                placeholder="E-mail"
                                 value={email}
                                 onChangeText={setEmail}
                                 autoCapitalize="none"
