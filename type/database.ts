@@ -8,7 +8,9 @@ export interface Students {
   birth_date: string; 
   email: string;       
   cpf: string;        
-  dojo_id: string;     
+  dojo_id: string;   
+  guardian_name: string;
+  phone: string;  
   created_at?: string; 
   updated_at?: string; 
 }

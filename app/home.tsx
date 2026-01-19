@@ -29,28 +29,25 @@ export default function DashboardAlunos() {
   const [belts, setBelts] = useState<Belts[]>([]);
   const [dojoId, setDojoId] = useState<string | null>(null);
 
-  // Estados de Interface
   const [screenWidth, setScreenWidth] = useState(Dimensions.get('window').width);
   const isMobile = screenWidth < 768;
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // Filtros e Paginação
   const [selectedBelt, setSelectedBelt] = useState('TODAS');
   const [currentPage, setCurrentPage] = useState(1);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-  // Função para formatar a data automaticamente (00/00/0000)
-  const formatDate = (text: string) => {
-    return text
-      .replace(/\D/g, '') 
-      .replace(/(\d{2})(\d)/, '$1/$2') 
-      .replace(/(\d{2})(\d)/, '$1/$2') 
-      .substring(0, 10); 
-  };
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isBeltModalOpen, setIsBeltModalOpen] = useState(false);
+  const [newBeltColor, setNewBeltColor] = useState('');
 
   const [newStudent, setNewStudent] = useState({
-    name: '', belt: '', birth_date: '', city: '', address: '', state: '', cpf: '', email: ''
+    name: '', belt: '', birth_date: '', city: '', address: '', state: '', cpf: '', email: '',
+    guardian_name: '', phone: ''
   });
+
+  const formatDate = (text: string) => {
+    return text.replace(/\D/g, '').replace(/(\d{2})(\d)/, '$1/$2').replace(/(\d{2})(\d)/, '$1/$2').substring(0, 10);
+  };
 
   useEffect(() => {
     const sub = Dimensions.addEventListener('change', ({ window }) => setScreenWidth(window.width));
@@ -64,17 +61,20 @@ export default function DashboardAlunos() {
     try {
       setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return router.replace('/login');
+
+      if (!user) return; // O _layout cuidará do redirecionamento
 
       const { data: dojo } = await supabase.from('dojo_users').select('dojo_id').eq('user_id', user.id).maybeSingle();
-
       if (dojo) {
         setDojoId(dojo.dojo_id);
         const { data } = await supabase.from('students').select('*').eq('dojo_id', dojo.dojo_id).order('name');
         setAlunos(data || []);
       }
-    } catch (e: any) { Alert.alert('Erro', e.message); }
-    finally { setLoading(false); }
+    } catch (e: any) {
+      Alert.alert('Erro', e.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function fetchBelts() {
@@ -82,9 +82,32 @@ export default function DashboardAlunos() {
     setBelts(data || []);
   }
 
-  const filteredAlunos = selectedBelt === 'TODAS' ? alunos : alunos.filter(a => a.belt === selectedBelt);
-  const totalPages = Math.ceil(filteredAlunos.length / ITEMS_PER_PAGE);
-  const paginatedAlunos = filteredAlunos.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+  const handleLogout = async () => {
+    console.log("Executando logout...");
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+
+      // Se o layout não redirecionar sozinho, forçamos aqui:
+      router.replace('/');
+    } catch (e: any) {
+      console.log("Erro no logout:", e.message);
+      // Caso o Alert falhe, usamos o alert nativo que funciona em tudo
+      alert("Erro ao sair: " + e.message);
+    }
+  };
+
+  async function handleCreateBelt() {
+    if (!newBeltColor) return Alert.alert("Atenção", "Digite o nome da cor da faixa.");
+    try {
+      const { error } = await supabase.from('belts').insert([{ color: newBeltColor.trim(), dojo_id: dojoId }]);
+      if (error) throw error;
+      Alert.alert("Sucesso", "Faixa cadastrada!");
+      setNewBeltColor('');
+      setIsBeltModalOpen(false);
+      await fetchBelts();
+    } catch (e: any) { Alert.alert("Erro ao salvar faixa", e.message); }
+  }
 
   async function handleCreateStudent() {
     if (!newStudent.name || !newStudent.belt || !newStudent.cpf) return Alert.alert("Atenção", "Preencha Nome, Faixa e CPF.");
@@ -93,12 +116,10 @@ export default function DashboardAlunos() {
       if (error) throw error;
       Alert.alert("Sucesso", "Aluno cadastrado!");
       setIsCreateModalOpen(false);
-      setNewStudent({ name: '', belt: '', birth_date: '', city: '', address: '', state: '', cpf: '', email: '' });
+      setNewStudent({ name: '', belt: '', birth_date: '', city: '', address: '', state: '', cpf: '', email: '', guardian_name: '', phone: '' });
       fetchData();
     } catch (e: any) { Alert.alert("Erro", e.message); }
   }
-
-  const handleLogout = async () => { await supabase.auth.signOut(); router.replace('/login'); };
 
   const MenuItem = ({ icon, title, active = false, onPress }: any) => (
     <TouchableOpacity style={[styles.menuItem, active && styles.menuItemActive]} onPress={onPress}>
@@ -107,21 +128,31 @@ export default function DashboardAlunos() {
     </TouchableOpacity>
   );
 
+  const filteredAlunos = selectedBelt === 'TODAS' ? alunos : alunos.filter(a => a.belt === selectedBelt);
+  const paginatedAlunos = filteredAlunos.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
   return (
     <>
       <Head><title>Dashboard | Budo</title></Head>
       <View style={styles.container}>
         <Stack.Screen options={{ headerShown: false }} />
 
+        {/* SIDEBAR */}
         {(!isMobile || menuOpen) && (
           <View style={[styles.sidebar, isMobile ? styles.sidebarMobile : styles.sidebarWeb]}>
             <View style={styles.logoContainer}><Image source={require('../assets/images/kimono.png')} style={styles.logoSidebar} /></View>
             <ScrollView>
               <MenuItem icon="people" title="Lista de Alunos" active={true} />
               <MenuItem icon="person-add" title="Cadastrar Alunos" onPress={() => { setIsCreateModalOpen(true); if (isMobile) setMenuOpen(false); }} />
-              <MenuItem icon="settings" title="Cadastro de faixas" />
+              <MenuItem icon="settings" title="Cadastro de faixas" onPress={() => { setIsBeltModalOpen(true); if (isMobile) setMenuOpen(false); }} />
             </ScrollView>
-            <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}><Ionicons name="arrow-back" size={20} color="#fff" /><Text style={styles.menuText}>Sair</Text></TouchableOpacity>
+            <TouchableOpacity
+              style={styles.logoutBtn}
+              onPress={handleLogout}
+            >
+              <Ionicons name="log-out-outline" size={20} color="#fff" />
+              <Text style={styles.menuText}>Sair</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -155,10 +186,9 @@ export default function DashboardAlunos() {
                       <Text style={styles.mobileName}>{item.name}</Text>
                       <Text style={styles.mobileSub}>{item.belt} • {item.birth_date}</Text>
                     </View>
-                    {/* BOTÕES RESTAURADOS NO MOBILE */}
                     <View style={{ flexDirection: 'row', gap: 10 }}>
-                        <TouchableOpacity style={styles.btnIcon}><Ionicons name="pencil" size={18} color="#5bc0de" /></TouchableOpacity>
-                        <TouchableOpacity style={styles.btnIcon}><Ionicons name="trash" size={18} color="#d9534f" /></TouchableOpacity>
+                      <TouchableOpacity style={styles.btnIcon}><Ionicons name="pencil" size={18} color="#5bc0de" /></TouchableOpacity>
+                      <TouchableOpacity style={styles.btnIcon}><Ionicons name="trash" size={18} color="#d9534f" /></TouchableOpacity>
                     </View>
                   </View>
                 )} />
@@ -187,6 +217,7 @@ export default function DashboardAlunos() {
           )}
         </View>
 
+        {/* MODAL CADASTRAR ALUNO */}
         <Modal visible={isCreateModalOpen} transparent animationType="slide">
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
@@ -194,31 +225,27 @@ export default function DashboardAlunos() {
               <ScrollView showsVerticalScrollIndicator={false}>
                 <Text style={styles.label}>Nome do Aluno</Text>
                 <TextInput style={styles.input} value={newStudent.name} onChangeText={(text) => setNewStudent({ ...newStudent, name: text })} />
-
+                <Text style={styles.label}>Nome do Responsável</Text>
+                <TextInput style={styles.input} value={newStudent.guardian_name} onChangeText={(text) => setNewStudent({ ...newStudent, guardian_name: text })} />
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.label}>Telefone</Text>
+                    <TextInput style={styles.input} value={newStudent.phone} onChangeText={(text) => setNewStudent({ ...newStudent, phone: text })} keyboardType="phone-pad" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.label}>CPF</Text>
+                    <TextInput style={styles.input} value={newStudent.cpf} onChangeText={(text) => setNewStudent({ ...newStudent, cpf: text })} keyboardType="numeric" />
+                  </View>
+                </View>
                 <Text style={styles.label}>Email</Text>
                 <TextInput style={styles.input} value={newStudent.email} onChangeText={(text) => setNewStudent({ ...newStudent, email: text })} />
-
-                <Text style={styles.label}>CPF</Text>
-                <TextInput style={styles.input} value={newStudent.cpf} onChangeText={(text) => setNewStudent({ ...newStudent, cpf: text })} keyboardType="numeric" />
-
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.label}>Nascimento</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="DD/MM/AAAA"
-                      value={newStudent.birth_date}
-                      onChangeText={(t) => setNewStudent({ ...newStudent, birth_date: formatDate(t) })}
-                      keyboardType="numeric"
-                      maxLength={10}
-                    />
+                    <TextInput style={styles.input} placeholder="DD/MM/AAAA" value={newStudent.birth_date} onChangeText={(t) => setNewStudent({ ...newStudent, birth_date: formatDate(t) })} keyboardType="numeric" maxLength={10} />
                   </View>
                   <View style={{ flex: 1 }}><Text style={styles.label}>Cidade</Text><TextInput style={styles.input} value={newStudent.city} onChangeText={(text) => setNewStudent({ ...newStudent, city: text })} /></View>
                 </View>
-
-                <Text style={styles.label}>Endereço</Text>
-                <TextInput style={styles.input} value={newStudent.address} onChangeText={(text) => setNewStudent({ ...newStudent, address: text })} />
-
                 <Text style={styles.label}>Faixa</Text>
                 <View style={styles.pickerWrap}>
                   <Picker selectedValue={newStudent.belt} onValueChange={(v) => setNewStudent({ ...newStudent, belt: v })}>
@@ -226,12 +253,26 @@ export default function DashboardAlunos() {
                     {belts.map(b => <Picker.Item key={b.color} label={b.color} value={b.color} />)}
                   </Picker>
                 </View>
-
                 <View style={styles.modalActions}>
                   <TouchableOpacity style={styles.btnCancel} onPress={() => setIsCreateModalOpen(false)}><Text>Cancelar</Text></TouchableOpacity>
                   <TouchableOpacity style={styles.btnSave} onPress={handleCreateStudent}><Text style={{ color: '#fff', fontWeight: 'bold' }}>Salvar Aluno</Text></TouchableOpacity>
                 </View>
               </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* MODAL CADASTRAR FAIXA */}
+        <Modal visible={isBeltModalOpen} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { maxWidth: 400 }]}>
+              <Text style={styles.modalTitle}>Nova Faixa</Text>
+              <Text style={styles.label}>Cor da Faixa</Text>
+              <TextInput style={styles.input} placeholder="Ex: Branca, Azul..." value={newBeltColor} onChangeText={setNewBeltColor} autoCapitalize="words" />
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.btnCancel} onPress={() => setIsBeltModalOpen(false)}><Text>Cancelar</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.btnSave} onPress={handleCreateBelt}><Text style={{ color: '#fff', fontWeight: 'bold' }}>Cadastrar</Text></TouchableOpacity>
+              </View>
             </View>
           </View>
         </Modal>
@@ -244,13 +285,21 @@ const styles = StyleSheet.create({
   container: { flex: 1, flexDirection: 'row', backgroundColor: '#F4F7FE' },
   sidebar: { backgroundColor: '#1B1E23', paddingVertical: 20, width: 260 },
   sidebarMobile: { position: 'absolute', left: 0, zIndex: 100, height: '100%' },
-  sidebarWeb: { },
+  sidebarWeb: {},
   logoContainer: { alignItems: 'center', marginBottom: 30 },
   logoSidebar: { width: 70, height: 70, borderRadius: 35, borderWidth: 2, borderColor: '#b31d1d' },
   menuItem: { flexDirection: 'row', alignItems: 'center', padding: 15, marginHorizontal: 10, borderRadius: 10, marginBottom: 5 },
   menuItemActive: { backgroundColor: '#b31d1d' },
   menuText: { color: '#fff', marginLeft: 12, fontWeight: '500' },
-  logoutBtn: { flexDirection: 'row', padding: 20, marginTop: 'auto', borderTopWidth: 1, borderTopColor: '#333' },
+  logoutBtn: {
+    flexDirection: 'row',
+    padding: 20,
+    marginTop: 'auto', // Empurra para o fim da sidebar
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+    alignItems: 'center',
+    width: '100%', // Garante que toda a largura seja clicável
+  },
   mainContent: { flex: 1, padding: 25 },
   headerTitleWeb: { fontSize: 28, fontWeight: 'bold', color: '#1B2559', marginBottom: 25 },
   headerTitleMobile: { fontSize: 20, fontWeight: 'bold', marginLeft: 15 },
