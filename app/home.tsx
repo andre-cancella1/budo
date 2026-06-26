@@ -9,6 +9,7 @@ import {
   Dimensions,
   FlatList,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -38,6 +39,9 @@ export default function DashboardAlunos() {
   const [isBeltModalOpen, setIsBeltModalOpen] = useState(false);
 
   const [newBeltColor, setNewBeltColor] = useState('');
+
+  // ESTADO PARA CONTROLE DE EDIÇÃO
+  const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
 
   // FORMULÁRIO COMPLETO RESTAURADO
   const [newStudent, setNewStudent] = useState({
@@ -77,7 +81,10 @@ export default function DashboardAlunos() {
         const { data } = await supabase.from('students').select('*').eq('dojo_id', dojo.dojo_id).order('name');
         setAlunos(data || []);
       }
-    } catch (e: any) { Alert.alert('Erro', e.message); } finally { setLoading(false); }
+    } catch (e: any) { 
+      if (Platform.OS === 'web') alert('Erro: ' + e.message);
+      else Alert.alert('Erro', e.message); 
+    } finally { setLoading(false); }
   }
 
   async function fetchBelts() {
@@ -85,59 +92,156 @@ export default function DashboardAlunos() {
     setBelts(data || []);
   }
 
-  async function handleCreateStudent() {
+  // FUNÇÃO QUE ATIVA A EDIÇÃO E PREENCHE O FORMULÁRIO
+  function handleStartEdit(student: Students) {
+    setEditingStudentId(student.id);
+    setNewStudent({
+      name: student.name || '',
+      belt: student.belt || '',
+      birth_date: student.birth_date || '',
+      city: student.city || '',
+      address: student.address || '',
+      state: student.state || '',
+      cpf: student.cpf || '',
+      email: student.email || '',
+      guardian_name: student.guardian_name || '',
+      phone: student.phone || '',
+      tuition_value: '150' 
+    });
+    setIsCreateModalOpen(true);
+  }
+
+  // FUNÇÃO AUXILIAR PARA FECHAR O MODAL RESETANDO OS ESTADOS
+  function handleCloseModal() {
+    setIsCreateModalOpen(false);
+    setEditingStudentId(null);
+    setNewStudent({
+      name: '', belt: '', birth_date: '', city: '', address: '', state: '',
+      cpf: '', email: '', guardian_name: '', phone: '', tuition_value: '150'
+    });
+  }
+
+  // SALVAR OU ATUALIZAR ALUNO
+  async function handleSaveStudent() {
     if (!newStudent.name || !newStudent.belt || !newStudent.cpf) {
-      return Alert.alert("Atenção", "Preencha Nome, Faixa e CPF.");
+      if (Platform.OS === 'web') alert("Preencha Nome, Faixa e CPF.");
+      else Alert.alert("Atenção", "Preencha Nome, Faixa e CPF.");
+      return;
     }
 
     try {
       setLoading(true);
-
-      // SEPARA o tuition_value do resto dos dados do aluno
       const { tuition_value, ...studentDataToSave } = newStudent;
 
-      // 1. Inserir Aluno apenas com os campos da tabela 'students'
-      const { data: studentData, error: studentError } = await supabase
-        .from('students')
-        .insert([{ ...studentDataToSave, dojo_id: dojoId }])
-        .select().single();
+      if (editingStudentId) {
+        // --- MODO EDIÇÃO (UPDATE) ---
+        const { error: updateError } = await supabase
+          .from('students')
+          .update(studentDataToSave)
+          .eq('id', editingStudentId);
 
-      if (studentError) throw studentError;
+        if (updateError) throw updateError;
+        
+        if (Platform.OS === 'web') alert("Aluno atualizado com sucesso!");
+        else Alert.alert("Sucesso", "Aluno atualizado com sucesso!");
 
-      // 2. Gerar Mensalidades usando o tuition_value extraído
-      const mensalidades = [];
-      const hoje = new Date();
-      const valorMensalidade = parseFloat(tuition_value) || 0;
+      } else {
+        // --- MODO CADASTRO (INSERT) ---
+        const { data: studentData, error: studentError } = await supabase
+          .from('students')
+          .insert([{ ...studentDataToSave, dojo_id: dojoId }])
+          .select().single();
 
-      for (let i = hoje.getMonth(); i <= 11; i++) {
-        mensalidades.push({
-          student_id: studentData.id,
-          dojo_id: dojoId,
-          description: `Mensalidade ${i + 1}/${hoje.getFullYear()}`,
-          amount: valorMensalidade,
-          due_date: new Date(hoje.getFullYear(), i, hoje.getDate()).toISOString().split('T')[0],
-          status: 'PENDENTE'
-        });
+        if (studentError) throw studentError;
+
+        // Gerar Mensalidades usando o tuition_value extraído (apenas no cadastro inicial)
+        const mensalidades = [];
+        const hoje = new Date();
+        const valorMensalidade = parseFloat(tuition_value) || 0;
+
+        for (let i = hoje.getMonth(); i <= 11; i++) {
+          mensalidades.push({
+            student_id: studentData.id,
+            dojo_id: dojoId,
+            description: `Mensalidade ${i + 1}/${hoje.getFullYear()}`,
+            amount: valorMensalidade,
+            due_date: new Date(hoje.getFullYear(), i, hoje.getDate()).toISOString().split('T')[0],
+            status: 'PENDENTE'
+          });
+        }
+
+        const { error: paymentError } = await supabase.from('payments').insert(mensalidades);
+        if (paymentError) console.error("Erro ao gerar mensalidades:", paymentError);
+
+        if (Platform.OS === 'web') alert("Aluno cadastrado e mensalidades geradas!");
+        else Alert.alert("Sucesso", "Aluno cadastrado e mensalidades geradas!");
       }
 
-      const { error: paymentError } = await supabase.from('payments').insert(mensalidades);
-      if (paymentError) console.error("Erro ao gerar mensalidades:", paymentError);
-
-      Alert.alert("Sucesso", "Aluno cadastrado e mensalidades geradas!");
-      setIsCreateModalOpen(false);
-
-      // Limpa o formulário
-      setNewStudent({
-        name: '', belt: '', birth_date: '', city: '', address: '', state: '',
-        cpf: '', email: '', guardian_name: '', phone: '', tuition_value: '150'
-      });
-
+      handleCloseModal();
       fetchData();
     } catch (e: any) {
-      Alert.alert("Erro", e.message);
+      if (Platform.OS === 'web') alert("Erro: " + e.message);
+      else Alert.alert("Erro", e.message);
     } finally {
       setLoading(false);
     }
+  }
+
+  // EXECUTA A LÓGICA DE EXCLUSÃO DE DADOS
+  async function executeDelete(studentId: string) {
+    try {
+      setLoading(true);
+
+      // 1. Apaga primeiro as mensalidades vinculadas
+      const { error: paymentsError } = await supabase
+        .from('payments')
+        .delete()
+        .eq('student_id', studentId);
+
+      if (paymentsError) throw paymentsError;
+
+      // 2. Apaga o aluno
+      const { error: studentError } = await supabase
+        .from('students')
+        .delete()
+        .eq('id', studentId);
+
+      if (studentError) throw studentError;
+
+      if (Platform.OS === 'web') alert("Aluno e suas mensalidades foram removidos com sucesso.");
+      else Alert.alert("Sucesso", "Aluno e suas mensalidades foram removidos com sucesso.");
+      
+      fetchData();
+    } catch (e: any) {
+      if (Platform.OS === 'web') alert("Erro: " + e.message);
+      else Alert.alert("Erro", e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // FUNÇÃO DE EXCLUSÃO ADAPTADA PARA WEB E MOBILE
+  async function handleDeleteStudent(studentId: string, studentName: string) {
+    const mensagem = `Você tem certeza que deseja excluir o aluno ${studentName}? Esta ação apagará permanentemente o cadastro e todas as mensalidades associadas a ele.`;
+
+    // Se estiver rodando na WEB (Navegador)
+    if (Platform.OS === 'web') {
+      const confirmou = window.confirm(mensagem);
+      if (confirmou) {
+        await executeDelete(studentId);
+      }
+      return;
+    }
+
+    // Se estiver rodando no MOBILE (Android / iOS)
+    Alert.alert(
+      "Confirmar Exclusão",
+      mensagem,
+      [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Excluir", style: "destructive", onPress: () => executeDelete(studentId) }
+      ]
+    );
   }
 
   const filteredAlunos = selectedBelt === 'TODAS' ? alunos : alunos.filter(a => a.belt === selectedBelt);
@@ -180,14 +284,18 @@ export default function DashboardAlunos() {
             {isMobile ? (
               <FlatList data={paginatedAlunos} keyExtractor={item => item.id} renderItem={({ item }) => (
                 <View style={styles.mobileCard}>
-                  <View style={styles.avatar}><Text style={styles.avatarText}>{item.name.charAt(0)}</Text></View>
+                  <View style={styles.avatar}><Text style={styles.avatarText}>{item.name ? item.name.charAt(0) : '?'}</Text></View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.mobileName}>{item.name}</Text>
                     <Text style={styles.mobileSub}>{item.belt} • {item.birth_date}</Text>
                   </View>
                   <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <TouchableOpacity style={styles.btnIcon}><Ionicons name="pencil" size={18} color="#5bc0de" /></TouchableOpacity>
-                    <TouchableOpacity style={styles.btnIcon}><Ionicons name="trash" size={18} color="#d9534f" /></TouchableOpacity>
+                    <TouchableOpacity style={styles.btnIcon} onPress={() => handleStartEdit(item)}>
+                      <Ionicons name="pencil" size={18} color="#5bc0de" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.btnIcon} onPress={() => handleDeleteStudent(item.id, item.name)}>
+                      <Ionicons name="trash" size={18} color="#d9534f" />
+                    </TouchableOpacity>
                   </View>
                 </View>
               )} />
@@ -205,8 +313,12 @@ export default function DashboardAlunos() {
                     <Text style={[styles.cell, { flex: 1 }]}>{item.birth_date}</Text>
                     <Text style={[styles.cell, { flex: 1, textAlign: 'center', fontWeight: 'bold' }]}>{item.belt}</Text>
                     <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'center', gap: 10 }}>
-                      <TouchableOpacity style={styles.btnIcon}><Ionicons name="pencil" size={18} color="#5bc0de" /></TouchableOpacity>
-                      <TouchableOpacity style={styles.btnIcon}><Ionicons name="trash" size={18} color="#d9534f" /></TouchableOpacity>
+                      <TouchableOpacity style={styles.btnIcon} onPress={() => handleStartEdit(item)}>
+                        <Ionicons name="pencil" size={18} color="#5bc0de" />
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.btnIcon} onPress={() => handleDeleteStudent(item.id, item.name)}>
+                        <Ionicons name="trash" size={18} color="#d9534f" />
+                      </TouchableOpacity>
                     </View>
                   </View>
                 )} />
@@ -220,7 +332,7 @@ export default function DashboardAlunos() {
       <Modal visible={isCreateModalOpen} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Cadastro de Aluno</Text>
+            <Text style={styles.modalTitle}>{editingStudentId ? 'Editar Aluno' : 'Cadastro de Aluno'}</Text>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.label}>Nome Completo</Text>
               <TextInput style={styles.input} value={newStudent.name} onChangeText={(t) => setNewStudent({ ...newStudent, name: t })} />
@@ -242,7 +354,13 @@ export default function DashboardAlunos() {
                   <TextInput style={styles.input} value={newStudent.phone} onChangeText={(t) => setNewStudent({ ...newStudent, phone: t })} keyboardType="phone-pad" />
                 </View>
                 <View style={{ flex: 1 }}><Text style={styles.label}>Valor Mensalidade</Text>
-                  <TextInput style={styles.input} value={newStudent.tuition_value} onChangeText={(t) => setNewStudent({ ...newStudent, tuition_value: t })} keyboardType="numeric" />
+                  <TextInput 
+                    style={[styles.input, editingStudentId && { opacity: 0.6 }]} 
+                    value={newStudent.tuition_value} 
+                    onChangeText={(t) => setNewStudent({ ...newStudent, tuition_value: t })} 
+                    keyboardType="numeric" 
+                    editable={!editingStudentId}
+                  />
                 </View>
               </View>
 
@@ -270,8 +388,12 @@ export default function DashboardAlunos() {
               </View>
 
               <View style={styles.modalActions}>
-                <TouchableOpacity style={styles.btnCancel} onPress={() => setIsCreateModalOpen(false)}><Text>Sair</Text></TouchableOpacity>
-                <TouchableOpacity style={styles.btnSave} onPress={handleCreateStudent}><Text style={{ color: '#fff', fontWeight: 'bold' }}>Salvar Aluno</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.btnCancel} onPress={handleCloseModal}><Text>Sair</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.btnSave} onPress={handleSaveStudent}>
+                  <Text style={{ color: '#fff', fontWeight: 'bold' }}>
+                    {editingStudentId ? 'Atualizar Dados' : 'Salvar Aluno'}
+                  </Text>
+                </TouchableOpacity>
               </View>
             </ScrollView>
           </View>

@@ -17,7 +17,7 @@ export default function MainLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  
+
   const [isMobile, setIsMobile] = useState(Dimensions.get('window').width < 768);
 
   useEffect(() => {
@@ -38,9 +38,9 @@ export default function MainLayout() {
     <View style={styles.sidebarInner}>
       <View style={styles.logoContainer}>
         <View style={styles.logoCircle}>
-          <Image 
-            source={require('../assets/images/kimono.png')} 
-            style={styles.logoImg} 
+          <Image
+            source={require('../assets/images/kimono.png')}
+            style={styles.logoImg}
             resizeMode="contain"
           />
         </View>
@@ -62,6 +62,14 @@ export default function MainLayout() {
           <Ionicons name="cash-outline" size={24} color="#fff" />
           <Text style={styles.menuText}>Financeiro</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.menuItem, pathname === '/finance' && styles.menuItemActive]}
+          onPress={() => navigateTo('/finance')}
+        >
+          <Ionicons name="document-outline" size={24} color="#fff" />
+          <Text style={styles.menuText}>Relatórios</Text>
+        </TouchableOpacity>
       </View>
 
       <TouchableOpacity style={styles.logoutBtn} onPress={() => navigateTo('/')}>
@@ -81,8 +89,8 @@ export default function MainLayout() {
 
       {/* MENU GAVETA MOBILE: Ajustado para aparecer na esquerda */}
       {isMobile && (
-        <Modal 
-          visible={isMenuOpen} 
+        <Modal
+          visible={isMenuOpen}
           animationType="fade" // Fade fica melhor para simulador de drawer lateral
           transparent={true}
           onRequestClose={() => setIsMenuOpen(false)}
@@ -99,10 +107,10 @@ export default function MainLayout() {
               </SafeAreaView>
             </View>
             {/* Área de fechar ao clicar fora (lado direito) */}
-            <TouchableOpacity 
-              style={styles.modalCloseArea} 
-              activeOpacity={1} 
-              onPress={() => setIsMenuOpen(false)} 
+            <TouchableOpacity
+              style={styles.modalCloseArea}
+              activeOpacity={1}
+              onPress={() => setIsMenuOpen(false)}
             />
           </View>
         </Modal>
