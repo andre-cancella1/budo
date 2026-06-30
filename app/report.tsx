@@ -1,10 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
 import * as FileSystem from 'expo-file-system';
 import { Stack } from 'expo-router';
 import Head from 'expo-router/head';
 import * as Sharing from 'expo-sharing';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -21,13 +20,17 @@ import { supabase } from '../lib/supabase';
 type ReportType = 'ALUNOS' | 'FINANCEIRO';
 type FinanceStatusFilter = 'TODOS' | 'PENDENTE' | 'PAGO';
 
+// Lista oficial de faixas do Dojo para o filtro
+const FAIXAS_DISPONIVEIS = ['Branca', 'Amarela', 'Vermelha', 'Laranja', 'Verde', 'Roxa', 'Marrom', 'Preta'];
+
 export default function DashboardRelatorios() {
   const [loading, setLoading] = useState(false);
   const [dojoId, setDojoId] = useState<string | null>(null);
   
-  // Estados dos Filtros
+  // Estados dos Filtros Modificados
   const [reportType, setReportType] = useState<ReportType>('ALUNOS');
   const [statusFilter, setStatusFilter] = useState<FinanceStatusFilter>('TODOS');
+  const [faixasSelecionadas, setFaixasSelecionadas] = useState<string[]>([]);
 
   const [screenWidth, setScreenWidth] = useState(Dimensions.get('window').width);
   const isMobile = screenWidth < 768;
@@ -51,6 +54,15 @@ export default function DashboardRelatorios() {
     getDojo();
   }, []);
 
+  // Alternador do filtro de faixas (Multi-seleção)
+  const toggleFaixa = (faixa: string) => {
+    if (faixasSelecionadas.includes(faixa)) {
+      setFaixasSelecionadas(faixasSelecionadas.filter(f => f !== faixa));
+    } else {
+      setFaixasSelecionadas([...faixasSelecionadas, faixa]);
+    }
+  };
+
   // FUNÇÃO PRINCIPAL: GERAÇÃO E EXPORTAÇÃO DO EXCEL
   async function generateExcelReport() {
     if (!dojoId) {
@@ -61,27 +73,30 @@ export default function DashboardRelatorios() {
 
     try {
       setLoading(true);
-
       let dataToExport: any[] = [];
       let filename = `Relatorio_${reportType.toLowerCase()}_${new Date().toISOString().split('T')[0]}`;
 
       if (reportType === 'ALUNOS') {
-        // Busca completa de alunos e suas informações cadastrais
-        const { data: students, error } = await supabase
+        let query = supabase
           .from('students')
           .select('name, belt, birth_date, cpf, email, phone, guardian_name, city, state, address')
           .eq('dojo_id', dojoId)
           .order('name');
 
+        // Se houver faixas selecionadas, aplica o filtro na query do banco
+        if (faixasSelecionadas.length > 0) {
+          query = query.in('belt', faixasSelecionadas);
+        }
+
+        const { data: students, error } = await query;
         if (error) throw error;
 
         if (!students || students.length === 0) {
-          const msg = "Nenhum aluno encontrado para gerar o relatório.";
+          const msg = "Nenhum aluno encontrado para os filtros selecionados.";
           Platform.OS === 'web' ? alert(msg) : Alert.alert("Aviso", msg);
           return;
         }
 
-        // Mapeia para colunas amigáveis em português
         dataToExport = students.map(student => ({
           'Nome Completo': student.name || '',
           'Graduação / Faixa': student.belt || '',
@@ -96,7 +111,6 @@ export default function DashboardRelatorios() {
         }));
 
       } else {
-        // Relatório Financeiro: Junção de dados de pagamentos com o nome do aluno
         let query = supabase
           .from('payments')
           .select(`
@@ -104,12 +118,11 @@ export default function DashboardRelatorios() {
             description,
             due_date,
             status,
-            students ( name )
+            students ( name, belt )
           `)
           .eq('dojo_id', dojoId)
           .order('due_date', { ascending: true });
 
-        // Aplica o filtro de status caso não seja 'TODOS'
         if (statusFilter !== 'TODOS') {
           query = query.eq('status', statusFilter);
         }
@@ -117,15 +130,23 @@ export default function DashboardRelatorios() {
         const { data: payments, error } = await query;
         if (error) throw error;
 
-        if (!payments || payments.length === 0) {
+        // Filtra os pagamentos localmente caso queira cruzar com o filtro de faixas do aluno relacionado
+        let filteredPayments = payments || [];
+        if (faixasSelecionadas.length > 0) {
+          filteredPayments = filteredPayments.filter((pay: any) => 
+            faixasSelecionadas.includes(pay.students?.belt)
+          );
+        }
+
+        if (filteredPayments.length === 0) {
           const msg = "Nenhum registro financeiro encontrado com os filtros selecionados.";
           Platform.OS === 'web' ? alert(msg) : Alert.alert("Aviso", msg);
           return;
         }
 
-        // Mapeia estruturando as informações financeiras de forma clara
-        dataToExport = payments.map((pay: any) => ({
+        dataToExport = filteredPayments.map((pay: any) => ({
           'Aluno': pay.students?.name || 'Não Identificado',
+          'Faixa do Aluno': pay.students?.belt || '',
           'Descrição da Parcela': pay.description || '',
           'Valor (R$)': pay.amount || 0,
           'Data de Vencimento': pay.due_date || '',
@@ -133,16 +154,13 @@ export default function DashboardRelatorios() {
         }));
       }
 
-      // Geração da planilha básica usando SheetJS
       const worksheet = XLSX.utils.json_to_sheet(dataToExport);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, reportType);
 
-      // Tratamento nativo focado em Web vs Mobile
       if (Platform.OS === 'web') {
         XLSX.writeFile(workbook, `${filename}.xlsx`);
       } else {
-        // Processo mobile usando o FileSystem nativo do Expo + nativo share sheet
         const wbout = XLSX.write(workbook, { type: 'base64', bookType: 'xlsx' });
         const uri = FileSystem.documentDirectory + `${filename}.xlsx`;
 
@@ -177,36 +195,76 @@ export default function DashboardRelatorios() {
         </View>
 
         <View style={styles.formCard}>
-          {/* SELETOR DE TIPO DE RELATÓRIO */}
+          {/* 1. SELEÇÃO DO TIPO DE RELATÓRIO */}
           <Text style={styles.label}>1. Tipo de Relatório</Text>
-          <View style={styles.pickerWrap}>
-            <Picker
-              selectedValue={reportType}
-              onValueChange={(itemValue) => setReportType(itemValue)}
+          <View style={styles.toggleGroup}>
+            <TouchableOpacity 
+              style={[styles.toggleButton, reportType === 'ALUNOS' && styles.toggleActive]}
+              onPress={() => setReportType('ALUNOS')}
             >
-              <Picker.Item label="Relatório Cadastral de Alunos" value="ALUNOS" />
-              <Picker.Item label="Relatório Financeiro (Mensalidades)" value="FINANCEIRO" />
-            </Picker>
+              <Text style={[styles.toggleText, reportType === 'ALUNOS' && styles.toggleTextActive]}>
+                Cadastral de Alunos
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.toggleButton, reportType === 'FINANCEIRO' && styles.toggleActive]}
+              onPress={() => setReportType('FINANCEIRO')}
+            >
+              <Text style={[styles.toggleText, reportType === 'FINANCEIRO' && styles.toggleTextActive]}>
+                Financeiro (Mensalidades)
+              </Text>
+            </TouchableOpacity>
           </View>
 
-          {/* FILTRO CONDICIONAL DE FINANCEIRO (SÓ APARECE SE TIPO FOR FINANCEIRO) */}
-          {reportType === 'FINANCEIRO' && (
-            <View style={{ marginTop: 15 }}>
-              <Text style={styles.label}>2. Filtrar Situação de Pagamento</Text>
-              <View style={styles.pickerWrap}>
-                <Picker
-                  selectedValue={statusFilter}
-                  onValueChange={(itemValue) => setStatusFilter(itemValue)}
+          {/* 2. FILTRO POR FAIXAS (ADICIONADO) */}
+          <Text style={styles.label}>2. Filtrar por Graduação / Faixa</Text>
+          <Text style={styles.subLabel}>Se nenhuma for marcada, trará todas as faixas por padrão.</Text>
+          <View style={styles.chipsContainer}>
+            {FAIXAS_DISPONIVEIS.map((faixa) => {
+              const isSelected = faixasSelecionadas.includes(faixa);
+              return (
+                <TouchableOpacity
+                  key={faixa}
+                  style={[styles.chip, isSelected && styles.chipSelected]}
+                  onPress={() => toggleFaixa(faixa)}
                 >
-                  <Picker.Item label="Todos os Status" value="TODOS" />
-                  <Picker.Item label="Apenas Pendentes 🔴" value="PENDENTE" />
-                  <Picker.Item label="Apenas Pagos 🟢" value="PAGO" />
-                </Picker>
+                  {isSelected && <Ionicons name="checkmark" size={14} color="#fff" style={{ marginRight: 4 }} />}
+                  <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
+                    {faixa}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* 3. FILTRO CONDICIONAL DE FINANCEIRO */}
+          {reportType === 'FINANCEIRO' && (
+            <View style={{ marginTop: 5 }}>
+              <Text style={styles.label}>3. Situação de Pagamento</Text>
+              <View style={styles.toggleGroup}>
+                <TouchableOpacity 
+                  style={[styles.toggleButton, statusFilter === 'TODOS' && styles.toggleActive]}
+                  onPress={() => setStatusFilter('TODOS')}
+                >
+                  <Text style={[styles.toggleText, statusFilter === 'TODOS' && styles.toggleTextActive]}>Todos</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.toggleButton, statusFilter === 'PENDENTE' && styles.toggleActive]}
+                  onPress={() => setStatusFilter('PENDENTE')}
+                >
+                  <Text style={[styles.toggleText, statusFilter === 'PENDENTE' && styles.toggleTextActive]}>Pendentes 🔴</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.toggleButton, statusFilter === 'PAGO' && styles.toggleActive]}
+                  onPress={() => setStatusFilter('PAGO')}
+                >
+                  <Text style={[styles.toggleText, statusFilter === 'PAGO' && styles.toggleTextActive]}>Pagos 🟢</Text>
+                </TouchableOpacity>
               </View>
             </View>
           )}
 
-          {/* BOTÃO DISPARADOR DINÂMICO */}
+          {/* BOTÃO DISPARADOR */}
           <TouchableOpacity 
             style={[styles.btnExport, loading && { opacity: 0.7 }]} 
             onPress={generateExcelReport}
@@ -235,8 +293,23 @@ const styles = StyleSheet.create({
   titleMobile: { fontSize: 22, fontWeight: 'bold', color: '#1B2559', marginTop: 10 },
   subtitle: { color: '#A3AED0', textAlign: 'center', marginTop: 5, fontSize: 14, lineHeight: 20 },
   formCard: { backgroundColor: '#fff', borderRadius: 20, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
-  label: { fontWeight: '600', color: '#1B2559', marginBottom: 8, fontSize: 15 },
-  pickerWrap: { backgroundColor: '#F4F7FE', borderRadius: 12, borderWidth: 1, borderColor: '#E0E5F2', overflow: 'hidden' },
-  btnExport: { backgroundColor: '#b31d1d', flexDirection: 'row', padding: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 30, shadowColor: '#b31d1d', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 5 },
+  label: { fontWeight: '600', color: '#1B2559', marginBottom: 10, fontSize: 15, marginTop: 5 },
+  subLabel: { fontSize: 12, color: '#A3AED0', marginTop: -6, marginBottom: 10 },
+  
+  // Estilos dos Novos Seletores de Botão
+  toggleGroup: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+  toggleButton: { flex: 1, backgroundColor: '#F4F7FE', paddingVertical: 12, paddingHorizontal: 10, borderRadius: 12, borderWidth: 1, borderColor: '#E0E5F2', alignItems: 'center', justifyContent: 'center' },
+  toggleActive: { borderColor: '#b31d1d', backgroundColor: '#FFF5F5' },
+  toggleText: { fontSize: 13, color: '#A3AED0', fontWeight: '500', textAlign: 'center' },
+  toggleTextActive: { color: '#b31d1d', fontWeight: 'bold' },
+
+  // Estilos dos Chips de Faixa
+  chipsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 20 },
+  chip: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#E0E5F2', backgroundColor: '#F4F7FE' },
+  chipSelected: { backgroundColor: '#b31d1d', borderColor: '#b31d1d' },
+  chipText: { fontSize: 13, color: '#1B2559' },
+  chipTextSelected: { color: '#fff', fontWeight: '600' },
+
+  btnExport: { backgroundColor: '#b31d1d', flexDirection: 'row', padding: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 15, shadowColor: '#b31d1d', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 5 },
   btnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 }
 });
