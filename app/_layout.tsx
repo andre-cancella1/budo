@@ -64,8 +64,8 @@ export default function MainLayout() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.menuItem, pathname === '/finance' && styles.menuItemActive]}
-          onPress={() => navigateTo('/finance')}
+          style={[styles.menuItem, pathname === '/report' && styles.menuItemActive]}
+          onPress={() => navigateTo('/report')}
         >
           <Ionicons name="document-outline" size={24} color="#fff" />
           <Text style={styles.menuText}>Relatórios</Text>
