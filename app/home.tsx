@@ -294,6 +294,33 @@ export default function DashboardAlunos() {
           </ScrollView>
         </View>
 
+        {!loading && (
+          <View style={styles.pagination}>
+            <Text style={styles.paginationInfo}>
+              {firstVisibleStudent}-{lastVisibleStudent} de {filteredAlunos.length} alunos
+            </Text>
+            <View style={styles.paginationControls}>
+              <TouchableOpacity
+                accessibilityLabel="Página anterior"
+                disabled={activePage === 1}
+                onPress={() => setCurrentPage(activePage - 1)}
+                style={[styles.pageButton, activePage === 1 && styles.pageButtonDisabled]}
+              >
+                <Ionicons name="chevron-back" size={18} color={activePage === 1 ? '#A3AED0' : '#1B2559'} />
+              </TouchableOpacity>
+              <Text style={styles.paginationInfo}>{activePage} / {totalPages}</Text>
+              <TouchableOpacity
+                accessibilityLabel="Próxima página"
+                disabled={activePage === totalPages}
+                onPress={() => setCurrentPage(activePage + 1)}
+                style={[styles.pageButton, activePage === totalPages && styles.pageButtonDisabled]}
+              >
+                <Ionicons name="chevron-forward" size={18} color={activePage === totalPages ? '#A3AED0' : '#1B2559'} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {loading ? <ActivityIndicator size="large" color="#b31d1d" style={{ flex: 1 }} /> : (
           <>
             {isMobile ? (
@@ -339,30 +366,6 @@ export default function DashboardAlunos() {
                 )} />
               </View>
             )}
-            <View style={styles.pagination}>
-              <Text style={styles.paginationInfo}>
-                {firstVisibleStudent}-{lastVisibleStudent} de {filteredAlunos.length} alunos
-              </Text>
-              <View style={styles.paginationControls}>
-                <TouchableOpacity
-                  accessibilityLabel="Página anterior"
-                  disabled={activePage === 1}
-                  onPress={() => setCurrentPage(activePage - 1)}
-                  style={[styles.pageButton, activePage === 1 && styles.pageButtonDisabled]}
-                >
-                  <Ionicons name="chevron-back" size={18} color={activePage === 1 ? '#A3AED0' : '#1B2559'} />
-                </TouchableOpacity>
-                <Text style={styles.paginationInfo}>{activePage} / {totalPages}</Text>
-                <TouchableOpacity
-                  accessibilityLabel="Próxima página"
-                  disabled={activePage === totalPages}
-                  onPress={() => setCurrentPage(activePage + 1)}
-                  style={[styles.pageButton, activePage === totalPages && styles.pageButtonDisabled]}
-                >
-                  <Ionicons name="chevron-forward" size={18} color={activePage === totalPages ? '#A3AED0' : '#1B2559'} />
-                </TouchableOpacity>
-              </View>
-            </View>
           </>
         )}
       </View>
