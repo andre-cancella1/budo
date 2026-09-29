@@ -297,7 +297,7 @@ export default function DashboardAlunos() {
         {loading ? <ActivityIndicator size="large" color="#b31d1d" style={{ flex: 1 }} /> : (
           <>
             {isMobile ? (
-              <FlatList data={paginatedAlunos} keyExtractor={item => item.id} renderItem={({ item }) => (
+              <FlatList style={{ flex: 1 }} data={paginatedAlunos} keyExtractor={item => item.id} renderItem={({ item }) => (
                 <View style={styles.mobileCard}>
                   <View style={styles.avatar}><Text style={styles.avatarText}>{item.name ? item.name.charAt(0) : '?'}</Text></View>
                   <View style={{ flex: 1 }}>
@@ -315,14 +315,14 @@ export default function DashboardAlunos() {
                 </View>
               )} />
             ) : (
-              <View style={styles.webCard}>
+              <View style={[styles.webCard, { flex: 1 }]}>
                 <View style={styles.tableHeader}>
                   <Text style={[styles.col, { flex: 2 }]}>Nome</Text>
                   <Text style={[styles.col, { flex: 1 }]}>Nascimento</Text>
                   <Text style={[styles.col, { flex: 1, textAlign: 'center' }]}>Faixa</Text>
                   <Text style={[styles.col, { flex: 1, textAlign: 'center' }]}>Ações</Text>
                 </View>
-                <FlatList data={paginatedAlunos} keyExtractor={item => item.id} renderItem={({ item }) => (
+                <FlatList style={{ flex: 1 }} data={paginatedAlunos} keyExtractor={item => item.id} renderItem={({ item }) => (
                   <View style={styles.tableRow}>
                     <Text style={[styles.cell, { flex: 2 }]}>{item.name}</Text>
                     <Text style={[styles.cell, { flex: 1 }]}>{item.birth_date}</Text>
