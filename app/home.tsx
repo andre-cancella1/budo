@@ -1,21 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import Head from 'expo-router/head';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Dimensions,
-  FlatList,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    FlatList,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { Belts, Students } from '../type/database';
@@ -23,10 +23,12 @@ import { Belts, Students } from '../type/database';
 const ITEMS_PER_PAGE = 10;
 
 export default function DashboardAlunos() {
+  const router = useRouter();
   const [alunos, setAlunos] = useState<Students[]>([]);
   const [loading, setLoading] = useState(true);
   const [belts, setBelts] = useState<Belts[]>([]);
   const [dojoId, setDojoId] = useState<string | null>(null);
+
 
   const [screenWidth, setScreenWidth] = useState(Dimensions.get('window').width);
   const isMobile = screenWidth < 768;
@@ -73,12 +75,15 @@ export default function DashboardAlunos() {
   async function fetchData() {
     try {
       setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
+      const resultUser: any = await supabase.auth.getUser();
+      const { data: { user } } = resultUser;
       if (!user) return;
-      const { data: dojo } = await supabase.from('dojo_users').select('dojo_id').eq('user_id', user.id).maybeSingle();
+      const dojoRes: any = await supabase.from('dojos').select('*').eq('ownerId', user.id).maybeSingle();
+      const { data: dojo } = dojoRes;
       if (dojo) {
-        setDojoId(dojo.dojo_id);
-        const { data } = await supabase.from('students').select('*').eq('dojo_id', dojo.dojo_id).order('name');
+        const resolvedDojoId = dojo.id || dojo.dojo_id || dojo.dojoId || null;
+        setDojoId(resolvedDojoId);
+        const { data } = await supabase.from('students').select('*').eq('dojoId', resolvedDojoId).order('name');
         setAlunos(data || []);
       }
     } catch (e: any) { 
@@ -88,7 +93,7 @@ export default function DashboardAlunos() {
   }
 
   async function fetchBelts() {
-    const { data } = await supabase.from('belts').select('*').eq('dojo_id', dojoId).order('color');
+    const { data } = await supabase.from('belts').select('*').eq('dojoId', dojoId).order('color');
     setBelts(data || []);
   }
 
@@ -149,7 +154,7 @@ export default function DashboardAlunos() {
         // --- MODO CADASTRO (INSERT) ---
         const { data: studentData, error: studentError } = await supabase
           .from('students')
-          .insert([{ ...studentDataToSave, dojo_id: dojoId }])
+          .insert([{ ...studentDataToSave, dojoId: dojoId }])
           .select().single();
 
         if (studentError) throw studentError;
@@ -160,9 +165,10 @@ export default function DashboardAlunos() {
         const valorMensalidade = parseFloat(tuition_value) || 0;
 
         for (let i = hoje.getMonth(); i <= 11; i++) {
-          mensalidades.push({
+            mensalidades.push({
             student_id: studentData.id,
-            dojo_id: dojoId,
+            dojoId: dojoId,
+            ownerId: (await supabase.auth.getUser()).data.user.id,
             description: `Mensalidade ${i + 1}/${hoje.getFullYear()}`,
             amount: valorMensalidade,
             due_date: new Date(hoje.getFullYear(), i, hoje.getDate()).toISOString().split('T')[0],
@@ -245,7 +251,11 @@ export default function DashboardAlunos() {
   }
 
   const filteredAlunos = selectedBelt === 'TODAS' ? alunos : alunos.filter(a => a.belt === selectedBelt);
-  const paginatedAlunos = filteredAlunos.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+  const totalPages = Math.max(1, Math.ceil(filteredAlunos.length / ITEMS_PER_PAGE));
+  const activePage = Math.min(currentPage, totalPages);
+  const paginatedAlunos = filteredAlunos.slice((activePage - 1) * ITEMS_PER_PAGE, activePage * ITEMS_PER_PAGE);
+  const firstVisibleStudent = filteredAlunos.length === 0 ? 0 : (activePage - 1) * ITEMS_PER_PAGE + 1;
+  const lastVisibleStudent = Math.min(activePage * ITEMS_PER_PAGE, filteredAlunos.length);
 
   return (
     <View style={styles.container}>
@@ -253,12 +263,17 @@ export default function DashboardAlunos() {
       <Stack.Screen options={{ title: 'Alunos' }} />
 
       <View style={styles.mainContent}>
+
         <View style={styles.headerRow}>
           <Text style={isMobile ? styles.headerTitleMobile : styles.headerTitleWeb}>Alunos</Text>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <TouchableOpacity style={styles.btnSecondary} onPress={() => setIsBeltModalOpen(true)}>
               <Ionicons name="settings-outline" size={20} color="#1B2559" />
               {!isMobile && <Text style={styles.btnSecondaryText}>Faixas</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.btnSecondary} onPress={() => router.push('/import')}>
+              <Ionicons name="cloud-download-outline" size={20} color="#1B2559" />
+              {!isMobile && <Text style={styles.btnSecondaryText}>Importação de alunos</Text>}
             </TouchableOpacity>
             <TouchableOpacity style={styles.btnNew} onPress={() => setIsCreateModalOpen(true)}>
               <Ionicons name="add" size={20} color="#fff" />
@@ -324,6 +339,30 @@ export default function DashboardAlunos() {
                 )} />
               </View>
             )}
+            <View style={styles.pagination}>
+              <Text style={styles.paginationInfo}>
+                {firstVisibleStudent}-{lastVisibleStudent} de {filteredAlunos.length} alunos
+              </Text>
+              <View style={styles.paginationControls}>
+                <TouchableOpacity
+                  accessibilityLabel="Página anterior"
+                  disabled={activePage === 1}
+                  onPress={() => setCurrentPage(activePage - 1)}
+                  style={[styles.pageButton, activePage === 1 && styles.pageButtonDisabled]}
+                >
+                  <Ionicons name="chevron-back" size={18} color={activePage === 1 ? '#A3AED0' : '#1B2559'} />
+                </TouchableOpacity>
+                <Text style={styles.paginationInfo}>{activePage} / {totalPages}</Text>
+                <TouchableOpacity
+                  accessibilityLabel="Próxima página"
+                  disabled={activePage === totalPages}
+                  onPress={() => setCurrentPage(activePage + 1)}
+                  style={[styles.pageButton, activePage === totalPages && styles.pageButtonDisabled]}
+                >
+                  <Ionicons name="chevron-forward" size={18} color={activePage === totalPages ? '#A3AED0' : '#1B2559'} />
+                </TouchableOpacity>
+              </View>
+            </View>
           </>
         )}
       </View>
@@ -411,7 +450,7 @@ export default function DashboardAlunos() {
             <View style={styles.inputRow}>
               <TextInput style={[styles.input, { flex: 1 }]} placeholder="Nova cor" value={newBeltColor} onChangeText={setNewBeltColor} />
               <TouchableOpacity style={styles.btnAddSmall} onPress={async () => {
-                const { error } = await supabase.from('belts').insert([{ color: newBeltColor.toUpperCase(), dojo_id: dojoId }]);
+                const { error } = await supabase.from('belts').insert([{ color: (newBeltColor || '').trim(), dojoId: dojoId }]);
                 if (!error) { setNewBeltColor(''); fetchBelts(); }
               }}><Ionicons name="add" size={24} color="#fff" /></TouchableOpacity>
             </View>
@@ -456,6 +495,11 @@ const styles = StyleSheet.create({
   mobileName: { fontWeight: 'bold', fontSize: 16, color: '#2B3674' },
   mobileSub: { color: '#A3AED0', fontSize: 12 },
   btnIcon: { padding: 8, borderRadius: 8, backgroundColor: '#F4F7FE' },
+  pagination: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
+  paginationInfo: { color: '#2B3674', fontSize: 13 },
+  paginationControls: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  pageButton: { width: 36, height: 36, borderRadius: 8, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E0E5F2' },
+  pageButtonDisabled: { opacity: 0.5 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { width: '90%', maxWidth: 550, backgroundColor: '#fff', borderRadius: 25, padding: 25, maxHeight: '90%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
