@@ -4,18 +4,18 @@ import { Stack, useRouter } from 'expo-router';
 import Head from 'expo-router/head';
 import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    FlatList,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  FlatList,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { Belts, Students } from '../type/database';
@@ -284,10 +284,10 @@ export default function DashboardAlunos() {
               <Ionicons name="settings-outline" size={20} color="#1B2559" />
               {!isMobile && <Text style={styles.btnSecondaryText}>Faixas</Text>}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.btnSecondary} onPress={() => router.push('/import')}>
+            {/*<TouchableOpacity style={styles.btnSecondary} onPress={() => router.push('/import')}>
               <Ionicons name="cloud-download-outline" size={20} color="#1B2559" />
               {!isMobile && <Text style={styles.btnSecondaryText}>Importação de alunos</Text>}
-            </TouchableOpacity>
+            </TouchableOpacity>*/}
             <TouchableOpacity style={styles.btnNew} onPress={() => setIsCreateModalOpen(true)}>
               <Ionicons name="add" size={20} color="#fff" />
               <Text style={styles.btnNewText}>{isMobile ? 'Novo' : 'Novo Aluno'}</Text>
