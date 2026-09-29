@@ -75,17 +75,25 @@ export default function DashboardAlunos() {
   async function fetchData() {
     try {
       setLoading(true);
-      const resultUser: any = await supabase.auth.getUser();
-      const { data: { user } } = resultUser;
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
       if (!user) return;
-      const dojoRes: any = await supabase.from('dojos').select('*').eq('ownerId', user.id).maybeSingle();
-      const { data: dojo } = dojoRes;
-      if (dojo) {
-        const resolvedDojoId = dojo.id || dojo.dojo_id || dojo.dojoId || null;
-        setDojoId(resolvedDojoId);
-        const { data } = await supabase.from('students').select('*').eq('dojoId', resolvedDojoId).order('name');
-        setAlunos(data || []);
-      }
+      const { data: dojo, error: dojoError } = await supabase
+        .from('dojo_users')
+        .select('dojo_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (dojoError) throw dojoError;
+      if (!dojo) throw new Error('Nenhum dojo está vinculado a este usuário.');
+
+      setDojoId(dojo.dojo_id);
+      const { data, error: studentsError } = await supabase
+        .from('students')
+        .select('*')
+        .eq('dojo_id', dojo.dojo_id)
+        .order('name');
+      if (studentsError) throw studentsError;
+      setAlunos(data || []);
     } catch (e: any) { 
       if (Platform.OS === 'web') alert('Erro: ' + e.message);
       else Alert.alert('Erro', e.message); 
@@ -93,7 +101,13 @@ export default function DashboardAlunos() {
   }
 
   async function fetchBelts() {
-    const { data } = await supabase.from('belts').select('*').eq('dojoId', dojoId).order('color');
+    if (!dojoId) return;
+    const { data, error } = await supabase.from('belts').select('*').eq('dojo_id', dojoId).order('color');
+    if (error) {
+      if (Platform.OS === 'web') alert('Erro ao carregar faixas: ' + error.message);
+      else Alert.alert('Erro ao carregar faixas', error.message);
+      return;
+    }
     setBelts(data || []);
   }
 
@@ -154,7 +168,7 @@ export default function DashboardAlunos() {
         // --- MODO CADASTRO (INSERT) ---
         const { data: studentData, error: studentError } = await supabase
           .from('students')
-          .insert([{ ...studentDataToSave, dojoId: dojoId }])
+          .insert([{ ...studentDataToSave, dojo_id: dojoId }])
           .select().single();
 
         if (studentError) throw studentError;
@@ -167,8 +181,7 @@ export default function DashboardAlunos() {
         for (let i = hoje.getMonth(); i <= 11; i++) {
             mensalidades.push({
             student_id: studentData.id,
-            dojoId: dojoId,
-            ownerId: (await supabase.auth.getUser()).data.user.id,
+            dojo_id: dojoId,
             description: `Mensalidade ${i + 1}/${hoje.getFullYear()}`,
             amount: valorMensalidade,
             due_date: new Date(hoje.getFullYear(), i, hoje.getDate()).toISOString().split('T')[0],
@@ -453,7 +466,7 @@ export default function DashboardAlunos() {
             <View style={styles.inputRow}>
               <TextInput style={[styles.input, { flex: 1 }]} placeholder="Nova cor" value={newBeltColor} onChangeText={setNewBeltColor} />
               <TouchableOpacity style={styles.btnAddSmall} onPress={async () => {
-                const { error } = await supabase.from('belts').insert([{ color: (newBeltColor || '').trim(), dojoId: dojoId }]);
+                const { error } = await supabase.from('belts').insert([{ color: (newBeltColor || '').trim(), dojo_id: dojoId }]);
                 if (!error) { setNewBeltColor(''); fetchBelts(); }
               }}><Ionicons name="add" size={24} color="#fff" /></TouchableOpacity>
             </View>
