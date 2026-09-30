@@ -78,22 +78,14 @@ export default function DashboardAlunos() {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
       if (!user) return;
-      const { data: dojo, error: dojoError } = await supabase
-        .from('dojo_users')
-        .select('dojo_id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      if (dojoError) throw dojoError;
-      if (!dojo) throw new Error('Nenhum dojo está vinculado a este usuário.');
-
-      setDojoId(dojo.dojo_id);
-      const { data, error: studentsError } = await supabase
-        .from('students')
-        .select('*')
-        .eq('dojo_id', dojo.dojo_id)
-        .order('name');
-      if (studentsError) throw studentsError;
-      setAlunos(data || []);
+      const dojoRes: any = await supabase.from('dojos').select('*').eq('ownerId', user.id).maybeSingle();
+      const { data: dojo } = dojoRes;
+      if (dojo) {
+        const resolvedDojoId = dojo.id || dojo.dojo_id || dojo.dojoId || null;
+        setDojoId(resolvedDojoId);
+        const { data } = await supabase.from('students').select('*').eq('dojoId', resolvedDojoId).order('name');
+        setAlunos(data || []);
+      }
     } catch (e: any) { 
       if (Platform.OS === 'web') alert('Erro: ' + e.message);
       else Alert.alert('Erro', e.message); 
@@ -101,13 +93,7 @@ export default function DashboardAlunos() {
   }
 
   async function fetchBelts() {
-    if (!dojoId) return;
-    const { data, error } = await supabase.from('belts').select('*').eq('dojo_id', dojoId).order('color');
-    if (error) {
-      if (Platform.OS === 'web') alert('Erro ao carregar faixas: ' + error.message);
-      else Alert.alert('Erro ao carregar faixas', error.message);
-      return;
-    }
+    const { data } = await supabase.from('belts').select('*').eq('dojoId', dojoId).order('color');
     setBelts(data || []);
   }
 
@@ -168,7 +154,7 @@ export default function DashboardAlunos() {
         // --- MODO CADASTRO (INSERT) ---
         const { data: studentData, error: studentError } = await supabase
           .from('students')
-          .insert([{ ...studentDataToSave, dojo_id: dojoId }])
+          .insert([{ ...studentDataToSave, dojoId: dojoId }])
           .select().single();
 
         if (studentError) throw studentError;
@@ -181,7 +167,8 @@ export default function DashboardAlunos() {
         for (let i = hoje.getMonth(); i <= 11; i++) {
             mensalidades.push({
             student_id: studentData.id,
-            dojo_id: dojoId,
+            dojoId: dojoId,
+            ownerId: (await supabase.auth.getUser()).data.user.id,
             description: `Mensalidade ${i + 1}/${hoje.getFullYear()}`,
             amount: valorMensalidade,
             due_date: new Date(hoje.getFullYear(), i, hoje.getDate()).toISOString().split('T')[0],
@@ -264,11 +251,7 @@ export default function DashboardAlunos() {
   }
 
   const filteredAlunos = selectedBelt === 'TODAS' ? alunos : alunos.filter(a => a.belt === selectedBelt);
-  const totalPages = Math.max(1, Math.ceil(filteredAlunos.length / ITEMS_PER_PAGE));
-  const activePage = Math.min(currentPage, totalPages);
-  const paginatedAlunos = filteredAlunos.slice((activePage - 1) * ITEMS_PER_PAGE, activePage * ITEMS_PER_PAGE);
-  const firstVisibleStudent = filteredAlunos.length === 0 ? 0 : (activePage - 1) * ITEMS_PER_PAGE + 1;
-  const lastVisibleStudent = Math.min(activePage * ITEMS_PER_PAGE, filteredAlunos.length);
+  const paginatedAlunos = filteredAlunos.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   return (
     <View style={styles.container}>
@@ -307,37 +290,10 @@ export default function DashboardAlunos() {
           </ScrollView>
         </View>
 
-        {!loading && (
-          <View style={styles.pagination}>
-            <Text style={styles.paginationInfo}>
-              {firstVisibleStudent}-{lastVisibleStudent} de {filteredAlunos.length} alunos
-            </Text>
-            <View style={styles.paginationControls}>
-              <TouchableOpacity
-                accessibilityLabel="Página anterior"
-                disabled={activePage === 1}
-                onPress={() => setCurrentPage(activePage - 1)}
-                style={[styles.pageButton, activePage === 1 && styles.pageButtonDisabled]}
-              >
-                <Ionicons name="chevron-back" size={18} color={activePage === 1 ? '#A3AED0' : '#1B2559'} />
-              </TouchableOpacity>
-              <Text style={styles.paginationInfo}>{activePage} / {totalPages}</Text>
-              <TouchableOpacity
-                accessibilityLabel="Próxima página"
-                disabled={activePage === totalPages}
-                onPress={() => setCurrentPage(activePage + 1)}
-                style={[styles.pageButton, activePage === totalPages && styles.pageButtonDisabled]}
-              >
-                <Ionicons name="chevron-forward" size={18} color={activePage === totalPages ? '#A3AED0' : '#1B2559'} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
         {loading ? <ActivityIndicator size="large" color="#b31d1d" style={{ flex: 1 }} /> : (
           <>
             {isMobile ? (
-              <FlatList style={{ flex: 1 }} data={paginatedAlunos} keyExtractor={item => item.id} renderItem={({ item }) => (
+              <FlatList data={paginatedAlunos} keyExtractor={item => item.id} renderItem={({ item }) => (
                 <View style={styles.mobileCard}>
                   <View style={styles.avatar}><Text style={styles.avatarText}>{item.name ? item.name.charAt(0) : '?'}</Text></View>
                   <View style={{ flex: 1 }}>
@@ -355,14 +311,14 @@ export default function DashboardAlunos() {
                 </View>
               )} />
             ) : (
-              <View style={[styles.webCard, { flex: 1 }]}>
+              <View style={styles.webCard}>
                 <View style={styles.tableHeader}>
                   <Text style={[styles.col, { flex: 2 }]}>Nome</Text>
                   <Text style={[styles.col, { flex: 1 }]}>Nascimento</Text>
                   <Text style={[styles.col, { flex: 1, textAlign: 'center' }]}>Faixa</Text>
                   <Text style={[styles.col, { flex: 1, textAlign: 'center' }]}>Ações</Text>
                 </View>
-                <FlatList style={{ flex: 1 }} data={paginatedAlunos} keyExtractor={item => item.id} renderItem={({ item }) => (
+                <FlatList data={paginatedAlunos} keyExtractor={item => item.id} renderItem={({ item }) => (
                   <View style={styles.tableRow}>
                     <Text style={[styles.cell, { flex: 2 }]}>{item.name}</Text>
                     <Text style={[styles.cell, { flex: 1 }]}>{item.birth_date}</Text>
@@ -466,7 +422,7 @@ export default function DashboardAlunos() {
             <View style={styles.inputRow}>
               <TextInput style={[styles.input, { flex: 1 }]} placeholder="Nova cor" value={newBeltColor} onChangeText={setNewBeltColor} />
               <TouchableOpacity style={styles.btnAddSmall} onPress={async () => {
-                const { error } = await supabase.from('belts').insert([{ color: (newBeltColor || '').trim(), dojo_id: dojoId }]);
+                const { error } = await supabase.from('belts').insert([{ color: (newBeltColor || '').trim(), dojoId: dojoId }]);
                 if (!error) { setNewBeltColor(''); fetchBelts(); }
               }}><Ionicons name="add" size={24} color="#fff" /></TouchableOpacity>
             </View>

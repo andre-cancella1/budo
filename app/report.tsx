@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Picker } from '@react-native-picker/picker';
 import * as FileSystem from 'expo-file-system';
 import { Stack } from 'expo-router';
 import Head from 'expo-router/head';
@@ -19,9 +20,38 @@ import { supabase } from '../lib/supabase';
 
 type ReportType = 'ALUNOS' | 'FINANCEIRO';
 type FinanceStatusFilter = 'TODOS' | 'PENDENTE' | 'PAGO';
+type StudentReportRow = {
+  name: string | null;
+  belt: string | null;
+  birth_date: string | null;
+  cpf: string | null;
+  email: string | null;
+  phone: string | null;
+  guardian_name: string | null;
+  medical_restriction: string | null;
+  city: string | null;
+  state: string | null;
+  address: string | null;
+};
 
 // Lista oficial de faixas do Dojo para o filtro
 const FAIXAS_DISPONIVEIS = ['Branca', 'Amarela', 'Vermelha', 'Laranja', 'Verde', 'Roxa', 'Marrom', 'Preta'];
+const MESES = [
+  { label: 'Ano todo', value: 'all' },
+  { label: 'Janeiro', value: '0' },
+  { label: 'Fevereiro', value: '1' },
+  { label: 'Março', value: '2' },
+  { label: 'Abril', value: '3' },
+  { label: 'Maio', value: '4' },
+  { label: 'Junho', value: '5' },
+  { label: 'Julho', value: '6' },
+  { label: 'Agosto', value: '7' },
+  { label: 'Setembro', value: '8' },
+  { label: 'Outubro', value: '9' },
+  { label: 'Novembro', value: '10' },
+  { label: 'Dezembro', value: '11' },
+];
+const ANOS = Array.from({ length: 8 }, (_, index) => String(new Date().getFullYear() - 5 + index));
 
 export default function DashboardRelatorios() {
   const [loading, setLoading] = useState(false);
@@ -31,6 +61,8 @@ export default function DashboardRelatorios() {
   const [reportType, setReportType] = useState<ReportType>('ALUNOS');
   const [statusFilter, setStatusFilter] = useState<FinanceStatusFilter>('TODOS');
   const [faixasSelecionadas, setFaixasSelecionadas] = useState<string[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState(String(new Date().getMonth()));
+  const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
 
   const [screenWidth, setScreenWidth] = useState(Dimensions.get('window').width);
   const isMobile = screenWidth < 768;
@@ -97,18 +129,18 @@ export default function DashboardRelatorios() {
           return;
         }
 
-        dataToExport = students.map(student => ({
+        dataToExport = students.map((student: StudentReportRow) => ({
           'Nome Completo': student.name || '',
           'Graduação / Faixa': student.belt || '',
           'Data de Nascimento': student.birth_date || '',
           'CPF': student.cpf || '',
           'E-mail': student.email || '',
-          'Telefone contato': student.phone || '',
-          'Responsável Legal': student.guardian_name || '',
-          'Restrições Médicas': student.medical_restriction || '',
+          'Endereço Residencial': student.address || '',
           'Cidade': student.city || '',
           'Estado': student.state || '',
-          'Endereço Residencial': student.address || ''
+          'Telefone contato': student.phone || '',
+          'Responsável Legal': student.guardian_name || '',
+          'Restrições Médicas': student.medical_restriction || ''
         }));
 
       } else {
@@ -127,6 +159,17 @@ export default function DashboardRelatorios() {
         if (statusFilter !== 'TODOS') {
           query = query.eq('status', statusFilter);
         }
+
+        let startDate = `${selectedYear}-01-01`;
+        let endDate = `${selectedYear}-12-31`;
+        if (selectedMonth !== 'all') {
+          const month = Number(selectedMonth);
+          const formattedMonth = String(month + 1).padStart(2, '0');
+          const lastDay = String(new Date(Number(selectedYear), month + 1, 0).getDate()).padStart(2, '0');
+          startDate = `${selectedYear}-${formattedMonth}-01`;
+          endDate = `${selectedYear}-${formattedMonth}-${lastDay}`;
+        }
+        query = query.gte('due_date', startDate).lte('due_date', endDate);
 
         const { data: payments, error } = await query;
         if (error) throw error;
@@ -241,7 +284,29 @@ export default function DashboardRelatorios() {
           {/* 3. FILTRO CONDICIONAL DE FINANCEIRO */}
           {reportType === 'FINANCEIRO' && (
             <View style={{ marginTop: 5 }}>
-              <Text style={styles.label}>3. Situação de Pagamento</Text>
+              <Text style={styles.label}>3. Período</Text>
+              <View style={styles.periodFilters}>
+                <View style={styles.periodPicker}>
+                  <Picker
+                    accessibilityLabel="Filtrar mês do relatório financeiro"
+                    selectedValue={selectedMonth}
+                    onValueChange={setSelectedMonth}
+                  >
+                    {MESES.map(month => <Picker.Item key={month.value} label={month.label} value={month.value} />)}
+                  </Picker>
+                </View>
+                <View style={styles.periodPicker}>
+                  <Picker
+                    accessibilityLabel="Filtrar ano do relatório financeiro"
+                    selectedValue={selectedYear}
+                    onValueChange={setSelectedYear}
+                  >
+                    {ANOS.map(yearOption => <Picker.Item key={yearOption} label={yearOption} value={yearOption} />)}
+                  </Picker>
+                </View>
+              </View>
+
+              <Text style={styles.label}>4. Situação de Pagamento</Text>
               <View style={styles.toggleGroup}>
                 <TouchableOpacity 
                   style={[styles.toggleButton, statusFilter === 'TODOS' && styles.toggleActive]}
@@ -296,6 +361,8 @@ const styles = StyleSheet.create({
   formCard: { backgroundColor: '#fff', borderRadius: 20, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
   label: { fontWeight: '600', color: '#1B2559', marginBottom: 10, fontSize: 15, marginTop: 5 },
   subLabel: { fontSize: 12, color: '#A3AED0', marginTop: -6, marginBottom: 10 },
+  periodFilters: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  periodPicker: { flex: 1, minHeight: 48, justifyContent: 'center', backgroundColor: '#F4F7FE', borderRadius: 12, borderWidth: 1, borderColor: '#E0E5F2', overflow: 'hidden' },
   
   // Estilos dos Novos Seletores de Botão
   toggleGroup: { flexDirection: 'row', gap: 8, marginBottom: 20 },
