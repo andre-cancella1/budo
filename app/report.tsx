@@ -79,7 +79,7 @@ export default function DashboardRelatorios() {
       if (reportType === 'ALUNOS') {
         let query = supabase
           .from('students')
-          .select('name, belt, birth_date, cpf, email, phone, guardian_name, city, state, address')
+          .select('name, belt, birth_date, cpf, email, phone, guardian_name, medical_restriction, city, state, address')
           .eq('dojo_id', dojoId)
           .order('name');
 
@@ -105,6 +105,7 @@ export default function DashboardRelatorios() {
           'E-mail': student.email || '',
           'Telefone contato': student.phone || '',
           'Responsável Legal': student.guardian_name || '',
+          'Restrições Médicas': student.medical_restriction || '',
           'Cidade': student.city || '',
           'Estado': student.state || '',
           'Endereço Residencial': student.address || ''
