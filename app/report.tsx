@@ -194,7 +194,7 @@ export default function DashboardRelatorios() {
           'Descrição da Parcela': pay.description || '',
           'Valor (R$)': pay.amount || 0,
           'Data de Vencimento': pay.due_date || '',
-          'Situação / Status': pay.status === 'PENDENTE' ? '🔴 PENDENTE' : '🟢 PAGO'
+          'Situação / Status': pay.status === 'PENDENTE' ? 'PENDENTE' : 'PAGO'
         }));
       }
 
